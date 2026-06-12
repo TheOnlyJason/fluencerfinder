@@ -1,0 +1,364 @@
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 2rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.logo:hover {
+  text-decoration: none;
+}
+
+.logo-icon {
+  color: var(--accent);
+  font-size: 1.3rem;
+}
+
+.header nav a {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.header nav a:hover {
+  color: var(--text);
+}
+
+.main {
+  flex: 1;
+  padding: 2rem;
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.search-hero {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.search-hero h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.search-hero p {
+  color: var(--text-muted);
+  margin-bottom: 1.5rem;
+}
+
+.search-form {
+  display: flex;
+  gap: 0.75rem;
+  max-width: 600px;
+  margin: 0 auto 1.5rem;
+}
+
+.search-input {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.btn {
+  padding: 0.75rem 1.25rem;
+  border: none;
+  border-radius: var(--radius);
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: background 0.15s;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.btn-secondary {
+  background: var(--surface-hover);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+  background: var(--border);
+}
+
+.filters {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0;
+}
+
+.filter-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.filter-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  gap: 1rem;
+}
+
+.filter-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.snapshot-note {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.filter-panel-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.filter-grow {
+  flex: 1 1 220px;
+  min-width: 200px;
+}
+
+.btn-sm {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.filter-followers {
+  flex: 0 1 160px;
+  min-width: 150px;
+}
+
+.filters select {
+  padding: 0.55rem 2rem 0.55rem 0.75rem;
+  min-width: 148px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: var(--bg);
+  color: var(--text);
+  font-size: 0.95rem;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.65rem center;
+}
+
+.filters select:hover {
+  border-color: var(--accent);
+}
+
+.filters select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+}
+
+.filters select option {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.results-meta {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.follower-count {
+  color: var(--accent);
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-top: 0.25rem;
+}
+
+.added-at {
+  color: var(--success);
+  font-size: 0.82rem;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+
+.results-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.result-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  transition: border-color 0.15s;
+}
+
+.result-card:hover {
+  border-color: var(--accent);
+}
+
+.result-card-new {
+  border: 2px solid var(--success);
+  box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.12);
+}
+
+.result-card-new:hover {
+  border-color: var(--success);
+}
+
+.result-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.result-handle {
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+.platform-badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--surface-hover);
+  color: var(--accent);
+}
+
+.result-bio {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-bottom: 0.75rem;
+}
+
+.result-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.tag {
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  background: var(--bg);
+  color: var(--text-muted);
+}
+
+.tag-niche {
+  color: var(--success);
+  background: rgba(74, 222, 128, 0.1);
+}
+
+.tag-muted {
+  opacity: 0.55;
+}
+
+.tag-email {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.tag-email:hover {
+  text-decoration: underline;
+}
+
+.import-section {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.import-section h3 {
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.import-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.creator-detail h1 {
+  font-size: 1.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.creator-meta {
+  color: var(--text-muted);
+  margin-bottom: 1.5rem;
+}
+
+.accounts-list h2 {
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+}
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 1.5rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.back-link:hover {
+  color: var(--accent);
+}
+
+.loading, .error {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-muted);
+}
+
+.error {
+  color: #f87171;
+}

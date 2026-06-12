@@ -1,0 +1,1 @@
+"""Creator Discovery MVP application."""

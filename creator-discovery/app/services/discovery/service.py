@@ -1,0 +1,315 @@
+from datetime import datetime
+from typing import List, Optional
+
+from sqlmodel import Session, select, func
+
+from app.core.config import get_settings
+from app.models.account import Account
+from app.models.enums import Platform
+from app.schemas.account import AccountRead
+from app.schemas.search import ParsedSearchCriteria, SearchRequest, SearchResponse, SearchResultItem
+from app.services.classification.classifier import classify_account
+from app.services.identity.resolver import attach_or_create_creator, resolve_identity
+from app.services.providers.base import DiscoveredAccount, DiscoveryProvider
+from app.services.providers.mock_provider import MockDiscoveryProvider
+from app.utils.fts import search_accounts_fts, sync_account_fts
+from app.utils.handles import build_profile_url, normalize_handle, strip_handle
+from app.utils.account_metrics import apply_follower_count, resolve_follower_count
+from app.utils.query_parse import (
+    ParsedDiscoveryQuery,
+    account_matches_criteria,
+    build_discovery_search_queries,
+    expand_topic_terms,
+    parse_discovery_query,
+)
+
+
+from app.services.providers.web_search_provider import WebSearchDiscoveryProvider
+from app.services.providers.youtube_provider import YouTubeDiscoveryProvider
+
+
+def get_default_providers() -> List[DiscoveryProvider]:
+    settings = get_settings()
+    providers: List[DiscoveryProvider] = [WebSearchDiscoveryProvider()]
+    if settings.youtube_api_key:
+        providers.append(YouTubeDiscoveryProvider())
+    if settings.use_mock_discovery:
+        providers.append(MockDiscoveryProvider())
+    return providers
+
+
+def _resolve_search_criteria(request: SearchRequest) -> ParsedDiscoveryQuery:
+    parsed = parse_discovery_query(request.query)
+    return ParsedDiscoveryQuery(
+        raw_query=request.query,
+        topic=request.niche or parsed.topic,
+        location=request.location or parsed.location,
+        min_followers=request.min_followers if request.min_followers is not None else parsed.min_followers,
+        max_followers=request.max_followers if request.max_followers is not None else parsed.max_followers,
+    )
+
+
+def _criteria_to_schema(criteria: ParsedDiscoveryQuery) -> ParsedSearchCriteria:
+    return ParsedSearchCriteria(
+        topic=criteria.topic or None,
+        location=criteria.location,
+        min_followers=criteria.min_followers,
+        max_followers=criteria.max_followers,
+    )
+
+
+async def ingest_discovered_account(
+    session: Session,
+    discovered: DiscoveredAccount,
+    *,
+    auto_classify: bool = True,
+    auto_resolve: bool = True,
+) -> Account:
+    handle = normalize_handle(discovered.handle)
+    existing = session.exec(
+        select(Account).where(
+            Account.platform == discovered.platform,
+            Account.handle == handle,
+        )
+    ).first()
+
+    profile_url = discovered.profile_url or build_profile_url(discovered.platform, handle)
+
+    if existing:
+        existing.display_name = discovered.display_name or existing.display_name
+        existing.profile_url = profile_url
+        existing.bio_text = discovered.bio_text or existing.bio_text
+        existing.location_text = discovered.location_text or existing.location_text
+        existing.external_links = discovered.external_links or existing.external_links
+        apply_follower_count(existing, discovered)
+        existing.last_seen_at = datetime.utcnow()
+        existing.is_active = True
+        existing.updated_at = datetime.utcnow()
+        account = existing
+    else:
+        account = Account(
+            platform=discovered.platform,
+            handle=handle,
+            display_name=discovered.display_name,
+            profile_url=profile_url,
+            bio_text=discovered.bio_text,
+            location_text=discovered.location_text,
+            external_links=discovered.external_links,
+            follower_count=resolve_follower_count(discovered),
+        )
+        session.add(account)
+        session.commit()
+        session.refresh(account)
+
+    if auto_resolve:
+        resolution = await resolve_identity(
+            session,
+            account_id=account.account_id,
+        )
+        attach_or_create_creator(session, account, resolution)
+
+    if account.platform == Platform.YOUTUBE:
+        from app.services.enrichment.youtube_captions import enrich_youtube_captions
+
+        await enrich_youtube_captions(account)
+
+    if auto_classify:
+        await classify_account(session, account)
+
+    if not account.follower_count:
+        from app.services.enrichment.follower_enrichment import enrich_follower_count
+
+        count = await enrich_follower_count(account, quick=True)
+        if count:
+            account.follower_count = count
+
+    from app.services.enrichment.profile_enrichment import (
+        apply_profile_enrichment,
+        enrich_account_profile,
+    )
+
+    profile = await enrich_account_profile(account, quick=True)
+    apply_profile_enrichment(account, profile)
+
+    sync_account_fts(session, account)
+    session.add(account)
+    session.commit()
+    session.refresh(account)
+    return account
+
+
+async def _ensure_follower_count(account: Account) -> None:
+    if account.follower_count:
+        return
+    from app.services.enrichment.follower_enrichment import enrich_follower_count
+
+    count = await enrich_follower_count(account, quick=False)
+    if count:
+        account.follower_count = count
+
+
+def _count_matching_in_database(session: Session, criteria: ParsedDiscoveryQuery) -> int:
+    from app.api.routes.accounts import _apply_account_filters
+
+    stmt = select(func.count()).select_from(Account).where(Account.is_active == True)  # noqa: E712
+    stmt = _apply_account_filters(
+        stmt,
+        niche=criteria.topic or None,
+        location=criteria.location,
+        min_followers=criteria.min_followers,
+        max_followers=criteria.max_followers,
+        is_active=True,
+    )
+    return session.exec(stmt).one()
+
+
+def _search_local_db(
+    session: Session,
+    criteria: ParsedDiscoveryQuery,
+    *,
+    platforms: Optional[List[Platform]] = None,
+    limit: int = 40,
+) -> List[Account]:
+    search_text = criteria.provider_query or criteria.raw_query
+    account_ids = search_accounts_fts(session, search_text, limit=limit * 2)
+    accounts: List[Account] = []
+
+    if account_ids:
+        for aid in account_ids:
+            acc = session.get(Account, aid)
+            if acc and acc.is_active:
+                accounts.append(acc)
+    else:
+        stmt = select(Account).where(Account.is_active == True)  # noqa: E712
+        if platforms:
+            stmt = stmt.where(Account.platform.in_(platforms))
+        if criteria.topic:
+            from sqlalchemy import or_
+
+            term_clauses = []
+            for term in expand_topic_terms(criteria.topic):
+                pattern = f"%{term}%"
+                term_clauses.append(
+                    or_(
+                        Account.niche.ilike(pattern),
+                        Account.bio_text.ilike(pattern),
+                        Account.channel_type.ilike(pattern),
+                        Account.hobbies.ilike(pattern),
+                    )
+                )
+            if term_clauses:
+                stmt = stmt.where(or_(*term_clauses))
+        if criteria.location:
+            stmt = stmt.where(Account.location_text.ilike(f"%{criteria.location.split(',')[0]}%"))
+        accounts = list(session.exec(stmt.limit(limit * 2)).all())
+
+    filtered: List[Account] = []
+    for acc in accounts:
+        if platforms and acc.platform not in platforms:
+            continue
+        if account_matches_criteria(
+            acc,
+            topic=criteria.topic,
+            location=criteria.location,
+            min_followers=criteria.min_followers,
+            max_followers=criteria.max_followers,
+        ):
+            filtered.append(acc)
+
+    return filtered[:limit]
+
+
+async def search_creators(
+    session: Session,
+    request: SearchRequest,
+    providers: Optional[List[DiscoveryProvider]] = None,
+) -> SearchResponse:
+    providers = providers or get_default_providers()
+    criteria = _resolve_search_criteria(request)
+    discover_limit = request.limit
+    if criteria.has_structured_filters or criteria.topic:
+        discover_limit = min(150, max(request.limit * 8, 60))
+
+    matched_in_database = _count_matching_in_database(session, criteria)
+    search_queries = build_discovery_search_queries(criteria)
+
+    local_accounts = _search_local_db(
+        session,
+        criteria,
+        platforms=request.platforms,
+        limit=discover_limit,
+    )
+    from_db = len(local_accounts)
+    sources: dict = {"database": from_db}
+
+    provider_accounts: List[Account] = []
+    from_providers = 0
+
+    if request.use_external_providers:
+        seen = {(a.platform, a.handle) for a in local_accounts}
+        provider_query = criteria.provider_query or criteria.raw_query
+        for provider in providers:
+            provider_new = 0
+            discover_kwargs = {
+                "query": provider_query,
+                "platforms": request.platforms,
+                "limit": discover_limit,
+            }
+            if getattr(provider, "name", "") == "web_search":
+                discover_kwargs["search_queries"] = search_queries
+            result = await provider.discover(**discover_kwargs)
+            for discovered in result.accounts:
+                key = (discovered.platform, normalize_handle(discovered.handle))
+                if key in seen:
+                    continue
+                seen.add(key)
+                account = await ingest_discovered_account(session, discovered)
+                provider_new += 1
+                from_providers += 1
+                if criteria.min_followers is not None or criteria.max_followers is not None:
+                    await _ensure_follower_count(account)
+                if account_matches_criteria(
+                    account,
+                    topic=criteria.topic,
+                    location=criteria.location,
+                    min_followers=criteria.min_followers,
+                    max_followers=criteria.max_followers,
+                ):
+                    provider_accounts.append(account)
+            if provider_new:
+                sources[result.provider_name] = sources.get(result.provider_name, 0) + provider_new
+
+    matched_in_database = _count_matching_in_database(session, criteria)
+
+    all_accounts = local_accounts + provider_accounts
+    seen_ids: set[str] = set()
+    results: List[SearchResultItem] = []
+    for acc in all_accounts:
+        if acc.account_id in seen_ids:
+            continue
+        seen_ids.add(acc.account_id)
+        creator_name = None
+        if acc.creator_id:
+            from app.models.creator import Creator
+            creator = session.get(Creator, acc.creator_id)
+            if creator:
+                creator_name = creator.canonical_name
+        source = "database" if acc in local_accounts else "provider"
+        results.append(SearchResultItem(
+            account=AccountRead.model_validate(acc),
+            creator_name=creator_name,
+            source=source,
+        ))
+        if len(results) >= request.limit:
+            break
+
+    return SearchResponse(
+        query=request.query,
+        results=results,
+        total=len(results),
+        sources=sources,
+        from_database=from_db,
+        from_providers=from_providers,
+        matched_in_database=matched_in_database,
+        parsed=_criteria_to_schema(criteria),
+    )
