@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "cd creator-discovery/frontend && npm install",
+  "buildCommand": "cd creator-discovery/frontend && npm run build",
+  "outputDirectory": "creator-discovery/frontend/dist",
+  "rewrites": [
+    { "source": "/((?!assets/|influencers\\.json).*)", "destination": "/index.html" }
+  ]
+}
