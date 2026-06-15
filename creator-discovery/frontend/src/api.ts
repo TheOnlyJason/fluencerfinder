@@ -1,4 +1,25 @@
-const API_BASE = "";
+const API_BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+
+export function isApiConfigured(): boolean {
+  return Boolean(API_BASE) || import.meta.env.DEV;
+}
+
+export function apiErrorMessage(context: "discover" | "load"): string {
+  if (import.meta.env.DEV) {
+    return context === "discover"
+      ? "Discovery failed. Start the API with: uvicorn app.main:app --reload --port 8000"
+      : "Could not load accounts. Is the API running on port 8000?";
+  }
+  if (!API_BASE) {
+    return (
+      "Discovery needs a deployed backend API. Set VITE_API_URL in Vercel to your API URL " +
+      "(e.g. Render/Railway). Supabase secrets alone only configure the database — the FastAPI server must be hosted separately."
+    );
+  }
+  return context === "discover"
+    ? `Discovery failed. Could not reach the API at ${API_BASE}. Check that the backend is running and CORS allows this site.`
+    : `Could not load accounts from ${API_BASE}.`;
+}
 
 export interface Account {
   account_id: string;

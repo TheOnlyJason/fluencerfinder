@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,7 +11,9 @@ from app.db.session import create_db_and_tables
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    create_db_and_tables()
+    # Supabase schema already exists; skip heavy migrations on Vercel cold starts.
+    if not os.getenv("VERCEL"):
+        create_db_and_tables()
     yield
 
 

@@ -1,0 +1,31 @@
+# Deploy the FastAPI backend (creator-discovery/) to Render or Railway.
+# Then set VITE_API_URL on Vercel to the backend URL.
+
+services:
+  - type: web
+    name: fluencerfinder-api
+    runtime: docker
+    rootDir: creator-discovery
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_DB_PASSWORD
+        sync: false
+      - key: SUPABASE_POOLER_HOST
+        sync: false
+      - key: SUPABASE_POOLER_PORT
+        value: "5432"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        value: https://fluencerfinder.vercel.app,http://localhost:5175

@@ -4,6 +4,7 @@ import {
   Account,
   AccountFacets,
   AccountFilters,
+  apiErrorMessage,
   describeParsedSearch,
   exportCsvUrl,
   exportJsonUrl,
@@ -259,7 +260,7 @@ export default function SearchPage() {
       setTotalInDatabase(data.total_in_database);
     } catch (err) {
       console.error(err);
-      setError("Could not load accounts. Is the API running on port 8000?");
+      setError(apiErrorMessage("load"));
     } finally {
       setLoadingList(false);
     }
@@ -343,9 +344,7 @@ export default function SearchPage() {
       }
     } catch (err) {
       console.error(err);
-      setError(
-        "Discovery failed. Check that the API is running (port 8000) and you're on the Creator Discovery app (port 5175, not 5173)."
-      );
+      setError(apiErrorMessage("discover"));
     } finally {
       setDiscovering(false);
     }

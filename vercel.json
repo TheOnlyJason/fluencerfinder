@@ -3,7 +3,30 @@
   "installCommand": "cd creator-discovery/frontend && npm install",
   "buildCommand": "cd creator-discovery/frontend && npm run build",
   "outputDirectory": "creator-discovery/frontend/dist",
+  "functions": {
+    "api/**/*.py": {
+      "maxDuration": 60,
+      "memory": 1024,
+      "excludeFiles": "{creator-discovery/frontend/**,creator-discovery/.venv/**,rightfluencer/**,**/__pycache__/**,**/.pytest_cache/**,**/node_modules/**,**/*.db}"
+    }
+  },
   "rewrites": [
+    { "source": "/health", "destination": "/api/index.py" },
+    { "source": "/search", "destination": "/api/index.py" },
+    { "source": "/accounts", "destination": "/api/index.py" },
+    { "source": "/accounts/:path*", "destination": "/api/index.py" },
+    { "source": "/creators", "destination": "/api/index.py" },
+    { "source": "/creators/:path*", "destination": "/api/index.py" },
+    { "source": "/exports", "destination": "/api/index.py" },
+    { "source": "/exports/:path*", "destination": "/api/index.py" },
+    { "source": "/imports", "destination": "/api/index.py" },
+    { "source": "/imports/:path*", "destination": "/api/index.py" },
+    { "source": "/identity", "destination": "/api/index.py" },
+    { "source": "/identity/:path*", "destination": "/api/index.py" },
+    { "source": "/openapi.json", "destination": "/api/index.py" },
+    { "source": "/docs", "destination": "/api/index.py" },
+    { "source": "/docs/:path*", "destination": "/api/index.py" },
+    { "source": "/redoc", "destination": "/api/index.py" },
     { "source": "/((?!assets/|influencers\\.json).*)", "destination": "/index.html" }
   ]
 }
