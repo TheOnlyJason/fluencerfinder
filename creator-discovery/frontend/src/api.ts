@@ -12,8 +12,8 @@ export function apiErrorMessage(context: "discover" | "load"): string {
   }
   if (!API_BASE) {
     return (
-      "Discovery needs a deployed backend API. Set VITE_API_URL in Vercel to your API URL " +
-      "(e.g. Render/Railway). Supabase secrets alone only configure the database — the FastAPI server must be hosted separately."
+      "Discovery needs a deployed backend API. On Cloudflare Pages, set API_ORIGIN to your backend URL " +
+      "(Render/Railway). Browsing still works from influencers.json without the API."
     );
   }
   return context === "discover"

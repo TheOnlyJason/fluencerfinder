@@ -1,0 +1,6 @@
+name = "fluencerfinder"
+compatibility_date = "2024-01-01"
+pages_build_output_dir = "dist"
+
+# Set API_ORIGIN in Cloudflare Pages → Settings → Environment variables
+# to your Render/Railway backend URL (e.g. https://fluencerfinder-api.onrender.com)

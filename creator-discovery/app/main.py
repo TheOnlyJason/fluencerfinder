@@ -11,7 +11,7 @@ from app.db.session import create_db_and_tables
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Supabase schema already exists; skip heavy migrations on Vercel cold starts.
+    # Supabase schema already exists; skip heavy migrations on serverless cold starts.
     if not os.getenv("VERCEL"):
         create_db_and_tables()
     yield

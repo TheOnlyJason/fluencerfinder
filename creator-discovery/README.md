@@ -108,6 +108,17 @@ creator-discovery/
   docs/          # API documentation
 ```
 
+## Production (Cloudflare Pages)
+
+Frontend on **Cloudflare Pages**, API on **Render** — see **[docs/CLOUDFLARE.md](docs/CLOUDFLARE.md)** for full setup.
+
+Quick summary:
+1. Deploy API via Render blueprint (`render.yaml` at repo root)
+2. Connect repo to Cloudflare Pages — root directory `creator-discovery/frontend`
+3. Set `API_ORIGIN` to your Render API URL in Cloudflare env vars
+
+Browsing works from bundled `influencers.json` without the API. **Discover new** needs `API_ORIGIN` + Render backend.
+
 ## Environment Variables
 
 | Variable | Default | Description |
