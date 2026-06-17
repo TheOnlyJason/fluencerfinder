@@ -2,7 +2,7 @@
 // requests to the Render backend from the SAME origin. Same-origin proxying
 // avoids CORS entirely and prevents ad blockers / privacy extensions from
 // blocking cross-site requests (net::ERR_BLOCKED_BY_CLIENT).
-const API_ORIGIN = "https://fluencerfinder.onrender.com";
+const API_ORIGIN = "https://fluencerfinder-minc35gbhq-ue.a.run.app";
 const API_PREFIXES = [
   "/health",
   "/search",
