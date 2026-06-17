@@ -3,7 +3,7 @@
 
 services:
   - type: web
-    name: fluencerfinder-api
+    name: fluencerfinder
     runtime: python
     rootDir: creator-discovery
     buildCommand: chmod +x build.sh && ./build.sh

@@ -19,7 +19,7 @@ After deploy, go to **Settings → Variables** and add:
 
 | Variable | Value |
 |----------|--------|
-| `API_ORIGIN` | `https://fluencerfinder-api.onrender.com` *(your Render API URL)* |
+| `API_ORIGIN` | `https://fluencerfinder.onrender.com` |
 
 > **Note:** Use **Pages** (static site + functions), not a blank Worker script. The deploy command above uses `wrangler.toml` in `creator-discovery/frontend/` which deploys as Pages.
 
@@ -40,14 +40,16 @@ After deploy, go to **Settings → Variables** and add:
 ## 1. Deploy the API (Render)
 
 1. Go to [render.com](https://render.com) → **New Blueprint** → connect `fluencerfinder` repo
-2. Uses root `render.yaml` — creates `fluencerfinder-api` web service
+2. Uses root `render.yaml` — creates `fluencerfinder` web service
 3. Add env vars from your `creator-discovery/.env`:
    - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_DB_PASSWORD`
    - `SUPABASE_POOLER_HOST`, `SUPABASE_POOLER_PORT`
    - `OPENAI_API_KEY`, `TAVILY_API_KEY`, `YOUTUBE_API_KEY`
    - `CORS_ORIGINS` — include your Cloudflare URL (see below)
-4. After deploy, note the URL: `https://fluencerfinder-api.onrender.com`
-5. Verify: `https://fluencerfinder-api.onrender.com/health`
+4. After deploy, note the URL: `https://fluencerfinder.onrender.com`
+5. Verify: `https://fluencerfinder.onrender.com/health` → `{"status":"ok",...}`
+
+> If you have two Render services (`fluencerfinder` and `fluencerfinder-api`), use **`fluencerfinder`** — the `-api` one may be a failed duplicate.
 
 ## 2. Deploy the frontend (Cloudflare)
 
@@ -94,16 +96,16 @@ Cloudflare only hosts the **frontend**. Discover calls `/search` → Cloudflare 
 ### Checklist
 
 1. **Render API deployed?**  
-   [render.com](https://render.com) → Blueprint from repo → service `fluencerfinder-api`  
+   [render.com](https://render.com) → Blueprint from repo → service `fluencerfinder`  
    Put Supabase + OpenAI + Tavily keys on **Render** (not Cloudflare).
 
 2. **Render health works?**  
-   Open `https://fluencerfinder-api.onrender.com/health` → should return `{"status":"ok",...}`
+   Open `https://fluencerfinder.onrender.com/health` → should return `{"status":"ok",...}`
 
 3. **API_ORIGIN on Cloudflare?**  
    Cloudflare project → **Settings → Variables** → add:
    ```
-   API_ORIGIN = https://fluencerfinder-api.onrender.com
+   API_ORIGIN = https://fluencerfinder.onrender.com
    ```
    Redeploy after adding.
 
