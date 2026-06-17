@@ -1,0 +1,19 @@
+# Cloned reference data — not needed for production deploy (use influencers.json)
+rightfluencer/
+
+# Local env
+.env
+*.env.local
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node
+node_modules/
+frontend/dist/
+
+# OS
+.DS_Store
