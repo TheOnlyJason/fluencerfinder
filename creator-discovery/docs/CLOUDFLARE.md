@@ -10,7 +10,7 @@ If you see **"Set up your application"** with Build command / Deploy command:
 |-------|--------|
 | **Project name** | `fluencerfinder` |
 | **Build command** | *(leave empty — build runs in deploy command)* |
-| **Deploy command** | `cd creator-discovery/frontend && npm ci && npm run build && npx wrangler deploy` |
+| **Deploy command** | `cd creator-discovery/frontend && npm ci && npm run build && npm run pages:deploy` |
 | **Builds for non-production branches** | ✓ checked |
 
 Then click **Deploy**.
