@@ -2,6 +2,9 @@
   "name": "fluencerfinder",
   "private": true,
   "scripts": {
-    "build": "npm --prefix creator-discovery/frontend ci && npm --prefix creator-discovery/frontend run build"
+    "build": "npm --prefix creator-discovery/frontend ci && VITE_API_URL=https://fluencerfinder.onrender.com npm --prefix creator-discovery/frontend run build"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
   }
 }
