@@ -9,3 +9,8 @@ compatibility_date = "2024-09-23"
 directory = "creator-discovery/frontend/dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
+
+# Keep-alive: ping the Render backend every 10 min so the free tier stays warm
+# (Render spins down after ~15 min idle). See scheduled() in worker.js.
+[triggers]
+crons = ["*/10 * * * *"]

@@ -26,4 +26,13 @@ export default {
     }
     return env.ASSETS.fetch(request);
   },
+
+  // Cron keep-alive: ping the backend so Render's free tier doesn't spin down
+  // (avoids 30-60s cold starts on the first Discover). Scheduled via the
+  // [triggers] crons entry in wrangler.toml.
+  async scheduled(_event, _env, ctx) {
+    ctx.waitUntil(
+      fetch(`${API_ORIGIN}/health`, { cf: { cacheTtl: 0 } }).catch(() => {})
+    );
+  },
 };
