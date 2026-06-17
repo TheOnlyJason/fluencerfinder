@@ -1,6 +1,8 @@
-// Empty base = same-origin. In production the Cloudflare Worker proxies API
-// paths (/search, /health, ...) to Render; in dev Vite proxies them to :8000.
-const API_BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+// Always same-origin. In production the Cloudflare Worker (worker.js) proxies
+// API paths (/search, /health, ...) to Render; in dev Vite proxies them to
+// :8000. We intentionally ignore VITE_API_URL so a stale dashboard env var
+// can't force direct cross-origin calls (which ad blockers / CORS break).
+const API_BASE = "";
 
 export function isApiConfigured(): boolean {
   return true;
