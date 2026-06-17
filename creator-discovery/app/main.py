@@ -25,11 +25,13 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+    # Public read API (no cookies/auth), so allow any origin. This avoids CORS
+    # edge cases with Cloudflare workers.dev / pages.dev / custom domains.
+    # allow_credentials must be False when allow_origins is ["*"].
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origin_list,
-        allow_origin_regex=r"https://[\w-]+\.(pages|workers)\.dev",
-        allow_credentials=True,
+        allow_origins=["*"],
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
