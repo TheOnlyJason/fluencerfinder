@@ -400,7 +400,7 @@ export default function SearchPage() {
             placeholder='e.g. "gamer in Los Angeles with 10K–100K followers"'
           />
           <button type="submit" className="btn btn-primary" disabled={discovering}>
-            {discovering ? "Discovering..." : "Discover new"}
+            {discovering ? "Discovering (may take ~60s)..." : "Discover new"}
           </button>
         </form>
       </section>

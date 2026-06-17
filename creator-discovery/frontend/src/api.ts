@@ -193,30 +193,42 @@ export async function searchCreators(
 ): Promise<SearchResponse> {
   const minFollowers = filters.min_followers;
   const maxFollowers = filters.max_followers;
-  const res = await fetch(`${API_BASE}/search`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      query,
-      platforms: filters.platform ? [filters.platform] : undefined,
-      niche: filters.niche || undefined,
-      location: filters.location || undefined,
-      min_followers: minFollowers,
-      max_followers: maxFollowers,
-      limit: 100,
-    }),
-  });
-  if (!res.ok) {
-    let detail = "";
-    try {
-      const body = await res.json();
-      detail = body.error || body.detail || "";
-    } catch {
-      detail = await res.text().catch(() => "");
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 120_000);
+  try {
+    const res = await fetch(`${API_BASE}/search`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query,
+        platforms: filters.platform ? [filters.platform] : undefined,
+        niche: filters.niche || undefined,
+        location: filters.location || undefined,
+        min_followers: minFollowers,
+        max_followers: maxFollowers,
+        limit: 100,
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      let detail = "";
+      try {
+        const body = await res.json();
+        detail = body.error || body.detail || "";
+      } catch {
+        detail = await res.text().catch(() => "");
+      }
+      throw new Error(detail || `Search failed (${res.status})`);
     }
-    throw new Error(detail || `Search failed (${res.status})`);
+    return res.json();
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Search timed out after 2 minutes. Try again — Render free tier may be waking up.");
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timeout);
   }
-  return res.json();
 }
 
 export async function getCreator(id: string): Promise<Creator> {

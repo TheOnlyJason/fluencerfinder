@@ -1,147 +1,38 @@
-# Cloudflare deployment (Pages + Functions)
+# Cloudflare Pages — production checklist
 
-Frontend on **Cloudflare Pages**, API on **Render** (Docker), proxied through Pages Functions on the same domain.
-
-## Cloudflare Workers Git setup (your screen)
-
-If you see **"Set up your application"** with Build command / Deploy command:
-
-| Field | Value |
-|-------|--------|
-| **Project name** | `fluencerfinder` |
-| **Build command** | *(leave empty — build runs in deploy command)* |
-| **Deploy command** | `cd creator-discovery/frontend && npm ci && npm run build && npm run pages:deploy` |
-| **Builds for non-production branches** | ✓ checked |
-
-Then click **Deploy**.
-
-After deploy, go to **Settings → Variables** and add:
-
-| Variable | Value |
-|----------|--------|
-| `API_ORIGIN` | `https://fluencerfinder.onrender.com` |
-
-> **Note:** Use **Pages** (static site + functions), not a blank Worker script. The deploy command above uses `wrangler.toml` in `creator-discovery/frontend/` which deploys as Pages.
-
-### Cloudflare Pages (recommended)
-
-1. [Cloudflare Dashboard](https://dash.cloudflare.com) → **Workers & Pages** → **Create** → **Pages** → **Connect to Git**
-2. Select `TheOnlyJason/fluencerfinder`
-3. Build settings:
+## Pages build settings (repo root)
 
 | Setting | Value |
 |---------|--------|
-| **Root directory** | *(leave empty — repo root)* |
 | **Build command** | `bash build.sh` |
 | **Build output directory** | `creator-discovery/frontend/dist` |
 
-**Or** set root directory to `creator-discovery/frontend` and use:
+## Environment variables (Cloudflare Pages)
 
-| Setting | Value |
-|---------|--------|
-| **Root directory** | `creator-discovery/frontend` |
-| **Build command** | `npm ci && npm run build` |
-| **Build output directory** | `dist` |
+| Variable | Value | Required? |
+|----------|--------|-----------|
+| `VITE_API_URL` | `https://fluencerfinder.onrender.com` | Optional — `build.sh` sets this by default |
+| `API_ORIGIN` | `https://fluencerfinder.onrender.com` | Optional — for `/health` proxy via Functions |
 
-> Do **not** run `npm ci` from the repo root — there is no `package-lock.json` there.
+## Render (`fluencerfinder` service — NOT `fluencerfinder-api`)
 
-4. Add `API_ORIGIN` env var (see below)
+| Variable | Value |
+|----------|--------|
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_DB_PASSWORD` | from `.env` |
+| `SUPABASE_POOLER_HOST`, `SUPABASE_POOLER_PORT` | from `.env` |
+| `OPENAI_API_KEY`, `TAVILY_API_KEY`, `YOUTUBE_API_KEY` | from `.env` |
+| `CORS_ORIGINS` | `https://fluencerfinder.onrender.com,http://localhost:5175` |
 
-## 1. Deploy the API (Render)
+CORS also allows any `*.pages.dev` and `*.workers.dev` origin automatically.
 
-1. Go to [render.com](https://render.com) → **New Blueprint** → connect `fluencerfinder` repo
-2. Uses root `render.yaml` — creates `fluencerfinder` web service
-3. Add env vars from your `creator-discovery/.env`:
-   - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_DB_PASSWORD`
-   - `SUPABASE_POOLER_HOST`, `SUPABASE_POOLER_PORT`
-   - `OPENAI_API_KEY`, `TAVILY_API_KEY`, `YOUTUBE_API_KEY`
-   - `CORS_ORIGINS` — include your Cloudflare URL (see below)
-4. After deploy, note the URL: `https://fluencerfinder.onrender.com`
-5. Verify: `https://fluencerfinder.onrender.com/health` → `{"status":"ok",...}`
+## Verify
 
-> If you have two Render services (`fluencerfinder` and `fluencerfinder-api`), use **`fluencerfinder`** — the `-api` one may be a failed duplicate.
+1. `https://fluencerfinder.onrender.com/health` → `{"status":"ok",...}`
+2. Cloudflare site loads and shows influencer cards
+3. **Discover new** — first request may take 30–90s (Render free tier cold start)
 
-## 2. Deploy the frontend (Cloudflare)
+## Architecture
 
-See **Cloudflare Workers Git setup** at the top of this doc, or use **Pages → Connect to Git** with root directory `creator-discovery/frontend`.
-
-Your site will be at `https://fluencerfinder.pages.dev` (or custom domain).
-
-## 3. Update CORS on Render
-
-After you know your Cloudflare URL, update Render env:
-
-```
-CORS_ORIGINS=https://fluencerfinder.pages.dev,https://your-custom-domain.com,http://localhost:5175
-```
-
-Redeploy the Render service.
-
-## 4. Custom domain (optional)
-
-Cloudflare Pages → **Custom domains** → add your domain.
-
-## Local CLI deploy
-
-```bash
-cd creator-discovery/frontend
-npm install
-npm run build
-npx wrangler pages deploy dist --project-name=fluencerfinder
-```
-
-## What works without API
-
-- Browse/filter/sort from `influencers.json` (instant, no backend)
-
-## What needs API_ORIGIN + Render
-
-- **Discover new** creators
-- Live DB export, CSV import, classification
-
-## Production troubleshooting (Discover failed)
-
-Cloudflare only hosts the **frontend**. Discover calls `/search` → Cloudflare Function → **Render API**.
-
-### Checklist
-
-1. **Render API deployed?**  
-   [render.com](https://render.com) → Blueprint from repo → service `fluencerfinder`  
-   Put Supabase + OpenAI + Tavily keys on **Render** (not Cloudflare).
-
-2. **Render health works?**  
-   Open `https://fluencerfinder.onrender.com/health` → should return `{"status":"ok",...}`
-
-3. **API_ORIGIN on Cloudflare?**  
-   Cloudflare project → **Settings → Variables** → add:
-   ```
-   API_ORIGIN = https://fluencerfinder.onrender.com
-   ```
-   Redeploy after adding.
-
-4. **CORS on Render?**  
-   Render env `CORS_ORIGINS` must include your live Cloudflare URL, e.g.:
-   ```
-   https://fluencerfinder.pages.dev,https://YOUR-SUBDOMAIN.workers.dev
-   ```
-
-5. **Test on production**  
-   Open `https://YOUR-SITE/health` in the browser:
-   - **503** → `API_ORIGIN` not set on Cloudflare
-   - **404** → Pages Functions not deployed (redeploy with `functions/_middleware.ts`)
-   - **`status: ok`** → API connected; Discover should work
-
-### Supabase secrets
-
-| Where | What |
-|-------|------|
-| **Render** | `SUPABASE_URL`, `SUPABASE_DB_PASSWORD`, `SUPABASE_POOLER_HOST`, API keys |
-| **Cloudflare** | Only `API_ORIGIN` (your Render URL) |
-
-Supabase dashboard secrets alone do not power Discover on Cloudflare.
-
-## CLI login
-
-```bash
-npx wrangler login
-```
+- **Browse/filter** → `influencers.json` (instant, no API)
+- **Discover** → browser calls Render directly (`VITE_API_URL` baked at build time)
+- **Health proxy** → `functions/_middleware.ts` at repo root (for same-origin `/health`)
