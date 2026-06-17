@@ -14,7 +14,10 @@ class SearchRequest(BaseModel):
     min_followers: Optional[int] = Field(default=None, ge=0)
     max_followers: Optional[int] = Field(default=None, ge=0)
     limit: int = Field(default=50, ge=1, le=150)
-    use_external_providers: bool = True
+    # Default to a fast, reliable database-only search. External web discovery
+    # (web search + scraping + LLM enrichment) is slow and only runs when the
+    # caller explicitly opts in.
+    use_external_providers: bool = False
 
 
 class ParsedSearchCriteria(BaseModel):

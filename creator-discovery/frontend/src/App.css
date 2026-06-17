@@ -69,7 +69,24 @@
   display: flex;
   gap: 0.75rem;
   max-width: 600px;
+  margin: 0 auto 0.75rem;
+}
+
+.deep-web-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  max-width: 600px;
   margin: 0 auto 1.5rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+}
+
+.deep-web-toggle input {
+  margin-top: 0.15rem;
+  cursor: pointer;
 }
 
 .search-input {

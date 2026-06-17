@@ -201,6 +201,7 @@ export default function SearchPage() {
     parsedSummary?: string;
   } | null>(null);
   const [newAccountIds, setNewAccountIds] = useState<Set<string>>(new Set());
+  const [deepWeb, setDeepWeb] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [loadingList, setLoadingList] = useState(true);
   const [error, setError] = useState("");
@@ -331,7 +332,7 @@ export default function SearchPage() {
     setDiscovering(true);
     setError("");
     try {
-      const data = await searchCreators(discoverQuery);
+      const data = await searchCreators(discoverQuery, {}, deepWeb);
       const syncedFilters = data.parsed ? formFromParsed(data.parsed) : filters;
       setFilters(syncedFilters);
       setDebouncedFilters(syncedFilters);
@@ -395,9 +396,27 @@ export default function SearchPage() {
             placeholder='e.g. "gamer in Los Angeles with 10K–100K followers"'
           />
           <button type="submit" className="btn btn-primary" disabled={discovering}>
-            {discovering ? "Discovering (may take ~60s)..." : "Discover new"}
+            {discovering
+              ? deepWeb
+                ? "Searching the web (~60s)..."
+                : "Searching..."
+              : deepWeb
+                ? "Search the web"
+                : "Search"}
           </button>
         </form>
+        <label className="deep-web-toggle">
+          <input
+            type="checkbox"
+            checked={deepWeb}
+            onChange={(e) => setDeepWeb(e.target.checked)}
+            disabled={discovering}
+          />
+          <span>
+            Also search the web for new creators (slower, ~60s — finds and saves
+            profiles not yet in your database)
+          </span>
+        </label>
       </section>
 
       <section className="filter-panel">

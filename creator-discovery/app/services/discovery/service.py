@@ -19,9 +19,9 @@ def _env_int(name: str, default: int) -> int:
 
 # Discovery happens inside the HTTP request, so it must finish well under the
 # frontend timeout. Cap how much provider work runs per request.
-DISCOVER_TIME_BUDGET_S = _env_int("DISCOVER_TIME_BUDGET_S", 45)
+DISCOVER_TIME_BUDGET_S = _env_int("DISCOVER_TIME_BUDGET_S", 35)
 DISCOVER_MAX_NEW = _env_int("DISCOVER_MAX_NEW", 12)
-DISCOVER_ACCOUNT_TIMEOUT_S = _env_int("DISCOVER_ACCOUNT_TIMEOUT_S", 20)
+DISCOVER_ACCOUNT_TIMEOUT_S = _env_int("DISCOVER_ACCOUNT_TIMEOUT_S", 15)
 
 from app.core.config import get_settings
 from app.models.account import Account
@@ -250,7 +250,8 @@ async def search_creators(
     if criteria.has_structured_filters or criteria.topic:
         discover_limit = min(150, max(request.limit * 8, 60))
 
-    matched_in_database = _count_matching_in_database(session, criteria)
+    # Counted once after discovery below; the pre-discovery count was redundant
+    # (it was immediately overwritten) and added a slow round-trip to the DB.
     search_queries = build_discovery_search_queries(criteria)
 
     local_accounts = _search_local_db(
@@ -282,8 +283,24 @@ async def search_creators(
             }
             if getattr(provider, "name", "") == "web_search":
                 discover_kwargs["search_queries"] = search_queries
+            # Bound discovery by the remaining budget. Without this, a slow
+            # provider (web search scrapes many pages at 20-30s each) can run
+            # for minutes and blow past the frontend timeout.
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
             try:
-                result = await provider.discover(**discover_kwargs)
+                result = await asyncio.wait_for(
+                    provider.discover(**discover_kwargs),
+                    timeout=remaining,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Provider %s discover exceeded time budget (%.0fs)",
+                    getattr(provider, "name", provider),
+                    DISCOVER_TIME_BUDGET_S,
+                )
+                break
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Provider %s discover failed: %s", getattr(provider, "name", provider), exc)
                 continue

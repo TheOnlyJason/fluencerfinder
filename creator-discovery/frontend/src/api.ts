@@ -187,7 +187,10 @@ export async function getAccountFacets(): Promise<AccountFacets> {
 
 export async function searchCreators(
   query: string,
-  filters: AccountFilters = {}
+  filters: AccountFilters = {},
+  // Database-only by default (fast, reliable). When true, also runs slow
+  // external web discovery (web search + scraping + LLM enrichment).
+  deepWeb = false
 ): Promise<SearchResponse> {
   const minFollowers = filters.min_followers;
   const maxFollowers = filters.max_followers;
@@ -205,6 +208,7 @@ export async function searchCreators(
         min_followers: minFollowers,
         max_followers: maxFollowers,
         limit: 100,
+        use_external_providers: deepWeb,
       }),
       signal: controller.signal,
     });
