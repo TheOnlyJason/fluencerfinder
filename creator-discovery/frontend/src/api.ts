@@ -1,7 +1,9 @@
+// Empty base = same-origin. In production the Cloudflare Worker proxies API
+// paths (/search, /health, ...) to Render; in dev Vite proxies them to :8000.
 const API_BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
 export function isApiConfigured(): boolean {
-  return Boolean(API_BASE) || import.meta.env.DEV;
+  return true;
 }
 
 export function apiErrorMessage(context: "discover" | "load"): string {
@@ -10,15 +12,9 @@ export function apiErrorMessage(context: "discover" | "load"): string {
       ? "Discovery failed. Start the API with: uvicorn app.main:app --reload --port 8000"
       : "Could not load accounts. Is the API running on port 8000?";
   }
-  if (!API_BASE) {
-    return (
-      "Discovery needs a deployed backend API. On Cloudflare Pages, set API_ORIGIN to your backend URL " +
-      "(Render/Railway). Browsing still works from influencers.json without the API."
-    );
-  }
   return context === "discover"
-    ? `Discovery failed. Could not reach the API at ${API_BASE}. Check that the backend is running and CORS allows this site.`
-    : `Could not load accounts from ${API_BASE}.`;
+    ? "Discovery failed. The backend may be waking up (free tier, ~30-60s) — try again in a moment."
+    : "Could not load accounts from the API.";
 }
 
 export interface Account {

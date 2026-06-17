@@ -279,19 +279,10 @@ export default function SearchPage() {
         setApiStatus(null);
         return;
       }
-      if (health.status === 503) {
-        setApiStatus(
-          "Discover is offline: set API_ORIGIN in Cloudflare (Settings → Variables) to your Render API URL, then redeploy."
-        );
-      } else if (health.status === 404) {
-        setApiStatus(
-          "Discover is offline: API routes are not deployed. Redeploy with Pages Functions (see docs/CLOUDFLARE.md)."
-        );
-      } else {
-        setApiStatus(
-          `Discover is offline: deploy the API on Render and set API_ORIGIN on Cloudflare. (/health → ${health.detail})`
-        );
-      }
+      setApiStatus(
+        "Discover couldn't reach the backend (it may still be waking up on the free tier). " +
+          "Browsing works from the local snapshot; try Discover again in a minute."
+      );
     });
   }, []);
 

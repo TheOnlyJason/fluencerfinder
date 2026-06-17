@@ -1,8 +1,11 @@
 name = "fluencerfinder"
+main = "worker.js"
 compatibility_date = "2024-09-23"
 
-# Assets-only Worker: serves the built SPA. The frontend calls the Render API
-# directly via the VITE_API_URL baked in at build time, so no proxy is needed.
+# Worker serves the built SPA via the ASSETS binding and proxies API paths to
+# the Render backend from the same origin (see worker.js). Same-origin calls
+# avoid CORS and ad-blocker (ERR_BLOCKED_BY_CLIENT) issues.
 [assets]
 directory = "creator-discovery/frontend/dist"
+binding = "ASSETS"
 not_found_handling = "single-page-application"
