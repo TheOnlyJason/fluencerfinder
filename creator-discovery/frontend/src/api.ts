@@ -206,7 +206,16 @@ export async function searchCreators(
       limit: 100,
     }),
   });
-  if (!res.ok) throw new Error("Search failed");
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const body = await res.json();
+      detail = body.error || body.detail || "";
+    } catch {
+      detail = await res.text().catch(() => "");
+    }
+    throw new Error(detail || `Search failed (${res.status})`);
+  }
   return res.json();
 }
 
@@ -241,4 +250,27 @@ export function exportCsvUrl(
 
 export function exportJsonUrl(): string {
   return `${API_BASE}/exports/json`;
+}
+
+export async function checkApiHealth(): Promise<{
+  ok: boolean;
+  status: number;
+  detail: string;
+}> {
+  try {
+    const res = await fetch(`${API_BASE}/health`);
+    if (res.ok) {
+      return { ok: true, status: res.status, detail: "connected" };
+    }
+    let detail = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      detail = body.error || body.detail || detail;
+    } catch {
+      /* ignore */
+    }
+    return { ok: false, status: res.status, detail };
+  } catch {
+    return { ok: false, status: 0, detail: "Could not reach /health" };
+  }
 }

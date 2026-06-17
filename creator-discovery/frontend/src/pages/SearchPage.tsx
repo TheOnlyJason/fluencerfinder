@@ -5,6 +5,7 @@ import {
   AccountFacets,
   AccountFilters,
   apiErrorMessage,
+  checkApiHealth,
   describeParsedSearch,
   exportCsvUrl,
   exportJsonUrl,
@@ -203,6 +204,7 @@ export default function SearchPage() {
   const [discovering, setDiscovering] = useState(false);
   const [loadingList, setLoadingList] = useState(true);
   const [error, setError] = useState("");
+  const [apiStatus, setApiStatus] = useState<string | null>(null);
 
   const hasActiveFilters = useMemo(
     () => Object.values(filters).some((v) => Boolean(v)),
@@ -265,6 +267,29 @@ export default function SearchPage() {
       setLoadingList(false);
     }
   }, [applyLocalCatalog, catalog, debouncedFilters, sort]);
+
+  useEffect(() => {
+    if (!import.meta.env.PROD) return;
+    checkApiHealth().then((health) => {
+      if (health.ok) {
+        setApiStatus(null);
+        return;
+      }
+      if (health.status === 503) {
+        setApiStatus(
+          "Discover is offline: set API_ORIGIN in Cloudflare (Settings → Variables) to your Render API URL, then redeploy."
+        );
+      } else if (health.status === 404) {
+        setApiStatus(
+          "Discover is offline: API routes are not deployed. Redeploy with Pages Functions (see docs/CLOUDFLARE.md)."
+        );
+      } else {
+        setApiStatus(
+          `Discover is offline: deploy the API on Render and set API_ORIGIN on Cloudflare. (/health → ${health.detail})`
+        );
+      }
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -344,7 +369,8 @@ export default function SearchPage() {
       }
     } catch (err) {
       console.error(err);
-      setError(apiErrorMessage("discover"));
+      const message = err instanceof Error ? err.message : "";
+      setError(message && !message.startsWith("Discovery failed") ? `${apiErrorMessage("discover")} (${message})` : apiErrorMessage("discover"));
     } finally {
       setDiscovering(false);
     }
@@ -501,6 +527,7 @@ export default function SearchPage() {
         </div>
       </section>
 
+      {apiStatus && <div className="error">{apiStatus}</div>}
       {error && <div className="error">{error}</div>}
 
       {lastSearch && (

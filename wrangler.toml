@@ -1,0 +1,5 @@
+name = "fluencerfinder"
+compatibility_date = "2024-01-01"
+pages_build_output_dir = "creator-discovery/frontend/dist"
+
+# Used when deploying from repo root. Prefer deploy from creator-discovery/frontend/ instead.

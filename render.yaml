@@ -1,16 +1,19 @@
-# Deploy the FastAPI backend (creator-discovery/) to Render or Railway.
-# Then set VITE_API_URL on Vercel to the backend URL.
+# Deploy the FastAPI backend (creator-discovery/) to Render.
+# Then set API_ORIGIN on Cloudflare Pages to the Render URL.
 
 services:
   - type: web
     name: fluencerfinder-api
-    runtime: docker
+    runtime: python
     rootDir: creator-discovery
-    dockerfilePath: ./Dockerfile
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: APP_ENV
         value: production
+      - key: PYTHON_VERSION
+        value: "3.12.0"
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_ANON_KEY
