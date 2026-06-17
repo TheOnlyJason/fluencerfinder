@@ -264,13 +264,15 @@ export function exportJsonUrl(): string {
   return `${API_BASE}/exports/json`;
 }
 
-export async function checkApiHealth(): Promise<{
+async function pingHealthOnce(timeoutMs: number): Promise<{
   ok: boolean;
   status: number;
   detail: string;
 }> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(`${API_BASE}/health`);
+    const res = await fetch(`${API_BASE}/health`, { signal: controller.signal });
     if (res.ok) {
       return { ok: true, status: res.status, detail: "connected" };
     }
@@ -284,5 +286,28 @@ export async function checkApiHealth(): Promise<{
     return { ok: false, status: res.status, detail };
   } catch {
     return { ok: false, status: 0, detail: "Could not reach /health" };
+  } finally {
+    window.clearTimeout(timer);
   }
+}
+
+// Render's free tier sleeps after ~15 min idle and can take 30-60s to wake.
+// Retry several times before declaring the API offline so a cold start is not
+// mistaken for an outage. onAttempt lets the UI show a "waking up" message.
+export async function checkApiHealth(onAttempt?: (attempt: number) => void): Promise<{
+  ok: boolean;
+  status: number;
+  detail: string;
+}> {
+  const attempts = 4;
+  let last = { ok: false, status: 0, detail: "Could not reach /health" };
+  for (let i = 0; i < attempts; i++) {
+    onAttempt?.(i + 1);
+    last = await pingHealthOnce(30_000);
+    if (last.ok) return last;
+    // Retry on network errors / 502 / 503 (cold start), not on real 4xx.
+    if (last.status !== 0 && last.status !== 502 && last.status !== 503) return last;
+    if (i < attempts - 1) await new Promise((r) => window.setTimeout(r, 3_000));
+  }
+  return last;
 }

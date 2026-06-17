@@ -270,7 +270,11 @@ export default function SearchPage() {
 
   useEffect(() => {
     if (!import.meta.env.PROD) return;
-    checkApiHealth().then((health) => {
+    checkApiHealth((attempt) => {
+      if (attempt > 1) {
+        setApiStatus("Waking up the discovery server (free tier, ~30-60s)…");
+      }
+    }).then((health) => {
       if (health.ok) {
         setApiStatus(null);
         return;
