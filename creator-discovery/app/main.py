@@ -11,8 +11,11 @@ from app.db.session import create_db_and_tables
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Supabase schema already exists; skip heavy migrations on serverless cold starts.
-    if not os.getenv("VERCEL"):
+    # Supabase schema already exists; skip heavy migrations on serverless/managed
+    # cold starts (Vercel, Cloud Run sets K_SERVICE) to keep startup fast. Set
+    # SKIP_DB_INIT=1 to force-skip anywhere.
+    skip = os.getenv("VERCEL") or os.getenv("K_SERVICE") or os.getenv("SKIP_DB_INIT")
+    if not skip:
         create_db_and_tables()
     yield
 
