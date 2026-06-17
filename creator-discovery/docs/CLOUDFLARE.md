@@ -23,7 +23,7 @@ After deploy, go to **Settings → Variables** and add:
 
 > **Note:** Use **Pages** (static site + functions), not a blank Worker script. The deploy command above uses `wrangler.toml` in `creator-discovery/frontend/` which deploys as Pages.
 
-### Alternative: Cloudflare Pages (recommended UI)
+### Cloudflare Pages (recommended)
 
 1. [Cloudflare Dashboard](https://dash.cloudflare.com) → **Workers & Pages** → **Create** → **Pages** → **Connect to Git**
 2. Select `TheOnlyJason/fluencerfinder`
@@ -31,11 +31,21 @@ After deploy, go to **Settings → Variables** and add:
 
 | Setting | Value |
 |---------|--------|
+| **Root directory** | *(leave empty — repo root)* |
+| **Build command** | `bash build.sh` |
+| **Build output directory** | `creator-discovery/frontend/dist` |
+
+**Or** set root directory to `creator-discovery/frontend` and use:
+
+| Setting | Value |
+|---------|--------|
 | **Root directory** | `creator-discovery/frontend` |
 | **Build command** | `npm ci && npm run build` |
 | **Build output directory** | `dist` |
 
-4. Add `API_ORIGIN` env var (same as above)
+> Do **not** run `npm ci` from the repo root — there is no `package-lock.json` there.
+
+4. Add `API_ORIGIN` env var (see below)
 
 ## 1. Deploy the API (Render)
 

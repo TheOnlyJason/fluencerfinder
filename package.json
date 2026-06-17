@@ -1,0 +1,7 @@
+{
+  "name": "fluencerfinder",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix creator-discovery/frontend ci && npm --prefix creator-discovery/frontend run build"
+  }
+}
