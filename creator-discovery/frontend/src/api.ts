@@ -221,7 +221,7 @@ export async function searchCreators(
     return res.json();
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {
-      throw new Error("Search timed out after 2 minutes. Try again — Render free tier may be waking up.");
+      throw new Error("Search timed out after 2 minutes. The backend may be busy — try a narrower query or try again.");
     }
     throw err;
   } finally {

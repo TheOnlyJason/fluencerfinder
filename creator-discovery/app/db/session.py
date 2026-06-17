@@ -1,21 +1,39 @@
+import logging
 from typing import Generator
 
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.core.config import get_settings
 
+logger = logging.getLogger(__name__)
+
 settings = get_settings()
 
-connect_args = {"check_same_thread": False} if settings.is_sqlite else {}
+if settings.is_sqlite:
+    connect_args = {"check_same_thread": False}
+else:
+    # Fail fast instead of hanging forever if the database is unreachable. Without
+    # this, a stalled connection during startup blocks uvicorn from ever serving
+    # any request (including /health), which looks like the backend being "down".
+    connect_args = {"connect_timeout": 10}
 engine = create_engine(
-    settings.resolved_database_url, echo=False, connect_args=connect_args
+    settings.resolved_database_url,
+    echo=False,
+    connect_args=connect_args,
+    pool_pre_ping=True,
 )
 
 
 def create_db_and_tables() -> None:
-    SQLModel.metadata.create_all(engine)
-    _migrate_schema()
-    _setup_fts()
+    # Startup must never hang or crash on a DB hiccup, otherwise the whole API
+    # (including /health) becomes unreachable. Log and continue so the service
+    # still boots; the Supabase schema already exists in production.
+    try:
+        SQLModel.metadata.create_all(engine)
+        _migrate_schema()
+        _setup_fts()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Skipping DB init (continuing startup): %s", exc)
 
 
 def _migrate_schema() -> None:
@@ -32,6 +50,9 @@ def _migrate_schema() -> None:
                 if col not in names:
                     conn.exec_driver_sql(f"ALTER TABLE accounts ADD COLUMN {col} {sql_type}")
         else:
+            # Don't let an ALTER TABLE wait forever on a table lock during startup.
+            conn.exec_driver_sql("SET lock_timeout = '5s'")
+            conn.exec_driver_sql("SET statement_timeout = '10s'")
             for col, sql_type in new_columns:
                 conn.exec_driver_sql(
                     f"ALTER TABLE accounts ADD COLUMN IF NOT EXISTS {col} {sql_type}"

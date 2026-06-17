@@ -1,7 +1,27 @@
+import asyncio
+import logging
+import os
+import time
 from datetime import datetime
 from typing import List, Optional
 
 from sqlmodel import Session, select, func
+
+logger = logging.getLogger(__name__)
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, ""))
+    except (TypeError, ValueError):
+        return default
+
+
+# Discovery happens inside the HTTP request, so it must finish well under the
+# frontend timeout. Cap how much provider work runs per request.
+DISCOVER_TIME_BUDGET_S = _env_int("DISCOVER_TIME_BUDGET_S", 45)
+DISCOVER_MAX_NEW = _env_int("DISCOVER_MAX_NEW", 12)
+DISCOVER_ACCOUNT_TIMEOUT_S = _env_int("DISCOVER_ACCOUNT_TIMEOUT_S", 20)
 
 from app.core.config import get_settings
 from app.models.account import Account
@@ -248,26 +268,53 @@ async def search_creators(
     if request.use_external_providers:
         seen = {(a.platform, a.handle) for a in local_accounts}
         provider_query = criteria.provider_query or criteria.raw_query
+        deadline = time.monotonic() + DISCOVER_TIME_BUDGET_S
+        ingested_new = 0
         for provider in providers:
+            if ingested_new >= DISCOVER_MAX_NEW or time.monotonic() >= deadline:
+                break
             provider_new = 0
             discover_kwargs = {
                 "query": provider_query,
                 "platforms": request.platforms,
-                "limit": discover_limit,
+                # Fetch only a few more than we'll ingest; fetching 150 results is slow.
+                "limit": min(discover_limit, max(DISCOVER_MAX_NEW * 3, 30)),
             }
             if getattr(provider, "name", "") == "web_search":
                 discover_kwargs["search_queries"] = search_queries
-            result = await provider.discover(**discover_kwargs)
+            try:
+                result = await provider.discover(**discover_kwargs)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Provider %s discover failed: %s", getattr(provider, "name", provider), exc)
+                continue
             for discovered in result.accounts:
+                # Stop ingesting once we hit the per-request cap or time budget so
+                # the endpoint returns promptly (DB results are already included).
+                if ingested_new >= DISCOVER_MAX_NEW or time.monotonic() >= deadline:
+                    break
                 key = (discovered.platform, normalize_handle(discovered.handle))
                 if key in seen:
                     continue
                 seen.add(key)
-                account = await ingest_discovered_account(session, discovered)
+                try:
+                    account = await asyncio.wait_for(
+                        ingest_discovered_account(session, discovered),
+                        timeout=DISCOVER_ACCOUNT_TIMEOUT_S,
+                    )
+                except (asyncio.TimeoutError, Exception) as exc:  # noqa: BLE001
+                    logger.warning("Ingest failed/timed out for %s: %s", discovered.handle, exc)
+                    session.rollback()
+                    continue
                 provider_new += 1
                 from_providers += 1
+                ingested_new += 1
                 if criteria.min_followers is not None or criteria.max_followers is not None:
-                    await _ensure_follower_count(account)
+                    try:
+                        await asyncio.wait_for(
+                            _ensure_follower_count(account), timeout=DISCOVER_ACCOUNT_TIMEOUT_S
+                        )
+                    except (asyncio.TimeoutError, Exception):  # noqa: BLE001
+                        pass
                 if account_matches_criteria(
                     account,
                     topic=criteria.topic,
