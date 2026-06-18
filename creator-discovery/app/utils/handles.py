@@ -105,10 +105,14 @@ def parse_profile_url(url: str) -> Tuple[Optional[Platform], Optional[str]]:
             parts = path.split("/")
             if parts and parts[0] == "channel" and len(parts) > 1:
                 return Platform.YOUTUBE, parts[1]
-            if parts and parts[0] == "user" and len(parts) > 1:
+            if parts and parts[0] in ("user", "c") and len(parts) > 1:
                 return Platform.YOUTUBE, normalize_handle(parts[1])
             if parts and parts[0].startswith("@"):
                 return Platform.YOUTUBE, normalize_handle(parts[0][1:])
+        elif "twitch.tv" in host:
+            parts = path.split("/")
+            if parts and parts[0] not in ("videos", "directory", "p"):
+                return Platform.TWITCH, normalize_handle(parts[0])
     except Exception:
         pass
     return None, None
@@ -125,6 +129,7 @@ def build_profile_url(platform: Platform, handle: str, *, external_links: str | 
         Platform.INSTAGRAM: f"https://www.instagram.com/{h}/",
         Platform.TIKTOK: f"https://www.tiktok.com/@{h}",
         Platform.X: f"https://x.com/{h}",
+        Platform.TWITCH: f"https://www.twitch.tv/{h}",
     }
     return urls.get(platform, f"https://example.com/{h}")
 

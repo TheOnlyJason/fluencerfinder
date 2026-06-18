@@ -37,9 +37,39 @@ export interface Account {
   language: string | null;
   classification_confidence: number | null;
   follower_count: number | null;
+  tier?: number | null;
   is_active: boolean;
   created_at?: string;
   creator_name?: string | null;
+}
+
+export const TIER_OPTIONS: { value: number; label: string; range: string }[] = [
+  { value: 1, label: "Tier 1 (1M+)", range: "1M+" },
+  { value: 2, label: "Tier 2 (500K–1M)", range: "500K–1M" },
+  { value: 3, label: "Tier 3 (200K–500K)", range: "200K–500K" },
+  { value: 4, label: "Tier 4 (100K–200K)", range: "100K–200K" },
+  { value: 5, label: "Tier 5 (<100K)", range: "<100K" },
+];
+
+/** Derive a creator's tier (1–5) from follower count, or null if unknown. */
+export function followerTier(count: number | null | undefined): number | null {
+  if (count == null || count < 0) return null;
+  if (count >= 1_000_000) return 1;
+  if (count >= 500_000) return 2;
+  if (count >= 200_000) return 3;
+  if (count >= 100_000) return 4;
+  return 5;
+}
+
+export function tierLabel(tier: number | null | undefined): string | null {
+  if (tier == null) return null;
+  return TIER_OPTIONS.find((t) => t.value === tier)?.label ?? `Tier ${tier}`;
+}
+
+/** Just the follower-range portion of a tier (e.g. "1M+", "500K–1M"). */
+export function tierRange(tier: number | null | undefined): string | null {
+  if (tier == null) return null;
+  return TIER_OPTIONS.find((t) => t.value === tier)?.range ?? null;
 }
 
 export interface AccountListResponse {
@@ -64,6 +94,7 @@ export interface AccountFilters {
   q?: string;
   min_followers?: number;
   max_followers?: number;
+  tier?: number;
 }
 
 export interface SearchResult {
@@ -174,6 +205,7 @@ export async function listAccounts(
   if (filters.q) params.set("q", filters.q);
   if (filters.min_followers != null) params.set("min_followers", String(filters.min_followers));
   if (filters.max_followers != null) params.set("max_followers", String(filters.max_followers));
+  if (filters.tier != null) params.set("tier", String(filters.tier));
   const res = await fetch(`${API_BASE}/accounts?${params}`);
   if (!res.ok) throw new Error("Failed to load accounts");
   return res.json();

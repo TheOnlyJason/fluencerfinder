@@ -9,12 +9,15 @@ import {
   describeParsedSearch,
   exportCsvUrl,
   exportJsonUrl,
-  formatFollowerCount,
   formatFollowerShort,
   getAccountFacets,
   listAccounts,
   parseFollowerInput,
   searchCreators,
+  followerTier,
+  tierLabel,
+  tierRange,
+  TIER_OPTIONS,
 } from "../api";
 import type { ParsedSearchCriteria } from "../api";
 import {
@@ -55,6 +58,7 @@ const EMPTY_FILTERS = {
   channel_type: "",
   min_followers: "",
   max_followers: "",
+  tier: "",
 };
 
 type FilterForm = typeof EMPTY_FILTERS;
@@ -70,6 +74,7 @@ function buildAccountFilters(form: FilterForm): AccountFilters {
   const maxFollowers = parseFollowerInput(form.max_followers);
   if (minFollowers != null) cleaned.min_followers = minFollowers;
   if (maxFollowers != null) cleaned.max_followers = maxFollowers;
+  if (form.tier) cleaned.tier = Number(form.tier);
   return cleaned;
 }
 
@@ -120,8 +125,13 @@ function AccountCard({
   showAddedAt?: boolean;
   isNew?: boolean;
 }) {
-  const followers = formatFollowerCount(account.follower_count, account.platform);
   const addedLabel = showAddedAt ? formatAddedAt(account.created_at) : null;
+  const tier = account.tier ?? followerTier(account.follower_count);
+  const tierText = tierLabel(tier);
+  // Follower counts in the catalog are unreliable, so we communicate audience
+  // size via the tier band (a range) instead of a specific number.
+  const range = tierRange(tier);
+  const followerWord = account.platform === "YouTube" ? "subscribers" : "followers";
 
   return (
     <div className={`result-card${isNew ? " result-card-new" : ""}`}>
@@ -145,11 +155,14 @@ function AccountCard({
               {account.display_name}
             </div>
           )}
-          {followers && (
-            <div className="follower-count">{followers}</div>
+          {range && (
+            <div className="follower-count">{`${range} ${followerWord}`}</div>
           )}
         </div>
-        <span className="platform-badge">{account.platform}</span>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+          <span className="platform-badge">{account.platform}</span>
+          {tierText && <span className="tier-badge" title={tierText}>{`Tier ${tier}`}</span>}
+        </div>
       </div>
       {addedLabel && <div className="added-at">{addedLabel}</div>}
       {account.bio_text && <p className="result-bio">{account.bio_text}</p>}
@@ -448,7 +461,7 @@ export default function SearchPage() {
             onChange={(e) => updateFilter("platform", e.target.value)}
           >
             <option value="">All platforms</option>
-            {(facets?.platforms ?? ["Instagram", "TikTok", "X", "YouTube"]).map((p) => (
+            {(facets?.platforms ?? ["Instagram", "TikTok", "X", "YouTube", "Twitch"]).map((p) => (
               <option key={p} value={p}>
                 {p}
               </option>
@@ -487,6 +500,18 @@ export default function SearchPage() {
             {(facets?.channel_types ?? []).map((c) => (
               <option key={c} value={c}>
                 {c}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filters.tier}
+            onChange={(e) => updateFilter("tier", e.target.value)}
+            aria-label="Filter by tier"
+          >
+            <option value="">All tiers</option>
+            {TIER_OPTIONS.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
               </option>
             ))}
           </select>

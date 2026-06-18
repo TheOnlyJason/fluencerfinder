@@ -1,4 +1,5 @@
 /** Client-side influencer catalog loaded from /influencers.json for fast browsing. */
+import { followerTier } from "./api";
 import type { Account, AccountFacets, AccountFilters, AccountSort } from "./api";
 
 export interface InfluencerSnapshot {
@@ -116,6 +117,10 @@ export function filterAccounts(accounts: Account[], filters: AccountFilters): Ac
     }
     if (filters.max_followers != null) {
       if (account.follower_count == null || account.follower_count > filters.max_followers) return false;
+    }
+
+    if (filters.tier != null) {
+      if (followerTier(account.follower_count) !== filters.tier) return false;
     }
 
     return true;

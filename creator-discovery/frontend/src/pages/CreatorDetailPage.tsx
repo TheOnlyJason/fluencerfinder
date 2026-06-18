@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Creator, formatFollowerCount, getCreator } from "../api";
+import { Creator, followerTier, getCreator, tierLabel, tierRange } from "../api";
 
 export default function CreatorDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -32,7 +32,11 @@ export default function CreatorDetailPage() {
       <section className="accounts-list">
         <h2>Linked Accounts ({creator.accounts.length})</h2>
         <div className="results-grid">
-          {creator.accounts.map((acc) => (
+          {creator.accounts.map((acc) => {
+            const tier = acc.tier ?? followerTier(acc.follower_count);
+            const range = tierRange(tier);
+            const followerWord = acc.platform === "YouTube" ? "subscribers" : "followers";
+            return (
             <div key={acc.account_id} className="result-card">
               <div className="result-header">
                 <div>
@@ -47,13 +51,16 @@ export default function CreatorDetailPage() {
                   {acc.display_name && (
                     <div style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>{acc.display_name}</div>
                   )}
-                  {formatFollowerCount(acc.follower_count, acc.platform) && (
-                    <div className="follower-count">
-                      {formatFollowerCount(acc.follower_count, acc.platform)}
-                    </div>
+                  {range && (
+                    <div className="follower-count">{`${range} ${followerWord}`}</div>
                   )}
                 </div>
-                <span className="platform-badge">{acc.platform}</span>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                  <span className="platform-badge">{acc.platform}</span>
+                  {tier && (
+                    <span className="tier-badge" title={tierLabel(tier) ?? undefined}>{`Tier ${tier}`}</span>
+                  )}
+                </div>
               </div>
               {acc.bio_text && <p className="result-bio">{acc.bio_text}</p>}
               <div className="result-tags">
@@ -79,7 +86,8 @@ export default function CreatorDetailPage() {
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </section>
     </div>

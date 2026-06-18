@@ -6,6 +6,7 @@ class Platform(str, Enum):
     TIKTOK = "TikTok"
     X = "X"
     YOUTUBE = "YouTube"
+    TWITCH = "Twitch"
 
 
 class IdentityAction(str, Enum):

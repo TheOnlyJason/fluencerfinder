@@ -57,7 +57,16 @@ def _apply_account_filters(
     q: Optional[str] = None,
     min_followers: Optional[int] = None,
     max_followers: Optional[int] = None,
+    tier: Optional[int] = None,
 ):
+    if tier is not None:
+        from app.utils.tiers import tier_bounds
+
+        low, high = tier_bounds(tier)
+        if low is not None and (min_followers is None or low > min_followers):
+            min_followers = low
+        if high is not None and (max_followers is None or high < max_followers):
+            max_followers = high
     if platform:
         stmt = stmt.where(Account.platform == platform)
     if niche:
@@ -198,6 +207,7 @@ def list_accounts(
     q: Optional[str] = None,
     min_followers: Optional[int] = Query(default=None, ge=0),
     max_followers: Optional[int] = Query(default=None, ge=0),
+    tier: Optional[int] = Query(default=None, ge=1, le=5),
     sort: str = Query(default="followers", pattern="^(followers|new|recent|handle)$"),
     limit: int = Query(default=200, le=500),
     offset: int = Query(default=0, ge=0),
@@ -212,6 +222,7 @@ def list_accounts(
         q=q,
         min_followers=min_followers,
         max_followers=max_followers,
+        tier=tier,
     )
 
     count_stmt = select(func.count()).select_from(Account)

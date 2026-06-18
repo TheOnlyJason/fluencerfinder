@@ -68,6 +68,13 @@ class AccountRead(BaseModel):
     def display_handle(self) -> str:
         return format_display_handle(self.platform, self.handle, self.display_name)
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def tier(self) -> Optional[int]:
+        from app.utils.tiers import follower_tier
+
+        return follower_tier(self.follower_count)
+
     model_config = {"from_attributes": True}
 
 
