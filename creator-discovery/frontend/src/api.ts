@@ -87,14 +87,14 @@ export interface AccountFacets {
 }
 
 export interface AccountFilters {
-  platform?: string;
-  niche?: string;
-  location?: string;
+  platforms?: string[];
+  niches?: string[];
+  locations?: string[];
+  tiers?: number[];
   channel_type?: string;
   q?: string;
   min_followers?: number;
   max_followers?: number;
-  tier?: number;
 }
 
 export interface SearchResult {
@@ -198,14 +198,14 @@ export async function listAccounts(
   sort: AccountSort = "followers"
 ): Promise<AccountListResponse> {
   const params = new URLSearchParams({ limit: String(limit), sort });
-  if (filters.platform) params.set("platform", filters.platform);
-  if (filters.niche) params.set("niche", filters.niche);
-  if (filters.location) params.set("location", filters.location);
+  for (const p of filters.platforms ?? []) params.append("platforms", p);
+  for (const n of filters.niches ?? []) params.append("niches", n);
+  for (const l of filters.locations ?? []) params.append("locations", l);
+  for (const t of filters.tiers ?? []) params.append("tiers", String(t));
   if (filters.channel_type) params.set("channel_type", filters.channel_type);
   if (filters.q) params.set("q", filters.q);
   if (filters.min_followers != null) params.set("min_followers", String(filters.min_followers));
   if (filters.max_followers != null) params.set("max_followers", String(filters.max_followers));
-  if (filters.tier != null) params.set("tier", String(filters.tier));
   const res = await fetch(`${API_BASE}/accounts?${params}`);
   if (!res.ok) throw new Error("Failed to load accounts");
   return res.json();
@@ -234,9 +234,9 @@ export async function searchCreators(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         query,
-        platforms: filters.platform ? [filters.platform] : undefined,
-        niche: filters.niche || undefined,
-        location: filters.location || undefined,
+        platforms: filters.platforms?.length ? filters.platforms : undefined,
+        niche: filters.niches?.[0] || undefined,
+        location: filters.locations?.[0] || undefined,
         min_followers: minFollowers,
         max_followers: maxFollowers,
         limit: 100,

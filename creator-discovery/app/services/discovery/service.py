@@ -174,8 +174,8 @@ def _count_matching_in_database(session: Session, criteria: ParsedDiscoveryQuery
     stmt = select(func.count()).select_from(Account).where(Account.is_active == True)  # noqa: E712
     stmt = _apply_account_filters(
         stmt,
-        niche=criteria.topic or None,
-        location=criteria.location,
+        niches=[criteria.topic] if criteria.topic else None,
+        locations=[criteria.location] if criteria.location else None,
         min_followers=criteria.min_followers,
         max_followers=criteria.max_followers,
         is_active=True,

@@ -1,7 +1,7 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import desc, func, nulls_last, or_
+from sqlalchemy import and_, desc, func, nulls_last, or_
 from sqlmodel import Session, select
 
 from app.core.deps import get_db
@@ -48,40 +48,52 @@ def _niche_filter(niche: str):
 def _apply_account_filters(
     stmt,
     *,
-    platform: Optional[Platform] = None,
-    niche: Optional[str] = None,
-    location: Optional[str] = None,
+    platforms: Optional[List[Platform]] = None,
+    niches: Optional[List[str]] = None,
+    locations: Optional[List[str]] = None,
     channel_type: Optional[str] = None,
     is_active: Optional[bool] = True,
     creator_id: Optional[str] = None,
     q: Optional[str] = None,
     min_followers: Optional[int] = None,
     max_followers: Optional[int] = None,
-    tier: Optional[int] = None,
+    tiers: Optional[List[int]] = None,
 ):
-    if tier is not None:
+    if platforms:
+        stmt = stmt.where(Account.platform.in_(platforms))
+    if niches:
+        # Match accounts in ANY of the selected niches (each expands to related terms).
+        niche_clauses = [c for c in (_niche_filter(n) for n in niches) if c is not None]
+        if niche_clauses:
+            stmt = stmt.where(or_(*niche_clauses))
+    if locations:
+        loc_clauses = []
+        for location in locations:
+            city = location.split(",")[0].strip()
+            loc_clauses.append(
+                or_(
+                    Account.location_text.ilike(f"%{location}%"),
+                    Account.location_text.ilike(f"%{city}%"),
+                    Account.bio_text.ilike(f"%{city}%"),
+                )
+            )
+        if loc_clauses:
+            stmt = stmt.where(or_(*loc_clauses))
+    if tiers:
         from app.utils.tiers import tier_bounds
 
-        low, high = tier_bounds(tier)
-        if low is not None and (min_followers is None or low > min_followers):
-            min_followers = low
-        if high is not None and (max_followers is None or high < max_followers):
-            max_followers = high
-    if platform:
-        stmt = stmt.where(Account.platform == platform)
-    if niche:
-        niche_clause = _niche_filter(niche)
-        if niche_clause is not None:
-            stmt = stmt.where(niche_clause)
-    if location:
-        city = location.split(",")[0].strip()
-        stmt = stmt.where(
-            or_(
-                Account.location_text.ilike(f"%{location}%"),
-                Account.location_text.ilike(f"%{city}%"),
-                Account.bio_text.ilike(f"%{city}%"),
-            )
-        )
+        tier_clauses = []
+        for t in tiers:
+            low, high = tier_bounds(t)
+            conds = []
+            if low is not None:
+                conds.append(Account.follower_count >= low)
+            if high is not None:
+                conds.append(Account.follower_count <= high)
+            if conds:
+                tier_clauses.append(and_(*conds))
+        if tier_clauses:
+            stmt = stmt.where(or_(*tier_clauses))
     if channel_type:
         pattern = f"%{channel_type}%"
         stmt = stmt.where(
@@ -198,31 +210,31 @@ def account_facets(session: Session = Depends(get_db)):
 @router.get("", response_model=AccountListResponse)
 def list_accounts(
     session: Session = Depends(get_db),
-    platform: Optional[Platform] = None,
-    niche: Optional[str] = None,
-    location: Optional[str] = None,
+    platforms: Optional[List[Platform]] = Query(default=None),
+    niches: Optional[List[str]] = Query(default=None),
+    locations: Optional[List[str]] = Query(default=None),
     channel_type: Optional[str] = None,
     is_active: Optional[bool] = True,
     creator_id: Optional[str] = None,
     q: Optional[str] = None,
     min_followers: Optional[int] = Query(default=None, ge=0),
     max_followers: Optional[int] = Query(default=None, ge=0),
-    tier: Optional[int] = Query(default=None, ge=1, le=5),
+    tiers: Optional[List[int]] = Query(default=None),
     sort: str = Query(default="followers", pattern="^(followers|new|recent|handle)$"),
     limit: int = Query(default=200, le=500),
     offset: int = Query(default=0, ge=0),
 ):
     base_filters = dict(
-        platform=platform,
-        niche=niche,
-        location=location,
+        platforms=platforms,
+        niches=niches,
+        locations=locations,
         channel_type=channel_type,
         is_active=is_active,
         creator_id=creator_id,
         q=q,
         min_followers=min_followers,
         max_followers=max_followers,
-        tier=tier,
+        tiers=tiers,
     )
 
     count_stmt = select(func.count()).select_from(Account)

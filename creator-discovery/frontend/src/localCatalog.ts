@@ -70,21 +70,28 @@ export async function loadInfluencerSnapshot(): Promise<InfluencerSnapshot | nul
 export function filterAccounts(accounts: Account[], filters: AccountFilters): Account[] {
   return accounts.filter((account) => {
     if (!account.is_active) return false;
-    if (filters.platform && account.platform !== filters.platform) return false;
 
-    if (filters.niche) {
-      const terms = expandTopicTerms(filters.niche);
-      const text = accountText(account);
-      if (!terms.some((term) => text.includes(term))) return false;
+    // Multi-select filters: an account passes if it matches ANY selected value.
+    if (filters.platforms?.length && !filters.platforms.includes(account.platform)) {
+      return false;
     }
 
-    if (filters.location) {
-      const city = filters.location.split(",")[0].trim().toLowerCase();
+    if (filters.niches?.length) {
+      const text = accountText(account);
+      const ok = filters.niches.some((niche) =>
+        expandTopicTerms(niche).some((term) => text.includes(term))
+      );
+      if (!ok) return false;
+    }
+
+    if (filters.locations?.length) {
       const loc = (account.location_text || "").toLowerCase();
       const bio = (account.bio_text || "").toLowerCase();
-      if (!loc.includes(filters.location.toLowerCase()) && !loc.includes(city) && !bio.includes(city)) {
-        return false;
-      }
+      const ok = filters.locations.some((location) => {
+        const city = location.split(",")[0].trim().toLowerCase();
+        return loc.includes(location.toLowerCase()) || loc.includes(city) || bio.includes(city);
+      });
+      if (!ok) return false;
     }
 
     if (filters.channel_type) {
@@ -119,8 +126,9 @@ export function filterAccounts(accounts: Account[], filters: AccountFilters): Ac
       if (account.follower_count == null || account.follower_count > filters.max_followers) return false;
     }
 
-    if (filters.tier != null) {
-      if (followerTier(account.follower_count) !== filters.tier) return false;
+    if (filters.tiers?.length) {
+      const t = followerTier(account.follower_count);
+      if (t == null || !filters.tiers.includes(t)) return false;
     }
 
     return true;

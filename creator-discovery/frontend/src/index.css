@@ -1,13 +1,13 @@
 :root {
-  --bg: #0f1117;
-  --surface: #1a1d27;
-  --surface-hover: #242836;
-  --border: #2e3345;
-  --text: #e8eaef;
-  --text-muted: #8b92a8;
-  --accent: #6c8cff;
-  --accent-hover: #5a7af5;
-  --success: #4ade80;
+  --bg: #ffffff;
+  --surface: #f6f7fb;
+  --surface-hover: #eceff7;
+  --border: #dfe3ee;
+  --text: #14171f;
+  --text-muted: #5c6478;
+  --accent: #4f6ef2;
+  --accent-hover: #3f5be0;
+  --success: #1aa260;
   --radius: 10px;
   --font: "DM Sans", system-ui, sans-serif;
 }
