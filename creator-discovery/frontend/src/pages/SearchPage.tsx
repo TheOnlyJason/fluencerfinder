@@ -8,10 +8,12 @@ import {
 } from "../api";
 import AccountCard from "../components/AccountCard";
 import Pagination from "../components/Pagination";
+import { useSelection } from "../selection";
 
 const PAGE_SIZE = 20;
 
 export default function SearchPage() {
+  const { isSelected, toggle } = useSelection();
   const [query, setQuery] = useState("");
   const [deepWeb, setDeepWeb] = useState(false);
   const [discovering, setDiscovering] = useState(false);
@@ -163,6 +165,9 @@ export default function SearchPage() {
                 account={account}
                 creatorName={account.creator_name}
                 isNew={newAccountIds.has(account.account_id)}
+                selectable
+                selected={isSelected(account.account_id)}
+                onToggleSelect={toggle}
               />
             ))}
           </div>

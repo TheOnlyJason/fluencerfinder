@@ -18,6 +18,7 @@ import {
 import MultiSelect from "../components/MultiSelect";
 import AccountCard, { isRecentlyAdded } from "../components/AccountCard";
 import Pagination from "../components/Pagination";
+import { useSelection } from "../selection";
 
 const EMPTY_FILTERS = {
   q: "",
@@ -45,6 +46,7 @@ function buildAccountFilters(form: FilterForm): AccountFilters {
 }
 
 export default function DatabasePage() {
+  const { isSelected, toggle } = useSelection();
   const [filters, setFilters] = useState({ ...EMPTY_FILTERS });
   const [sort, setSort] = useState<SortKey>("followers");
   const [debouncedFilters, setDebouncedFilters] = useState({ ...EMPTY_FILTERS });
@@ -280,6 +282,9 @@ export default function DatabasePage() {
                 creatorName={account.creator_name}
                 showAddedAt={sort === "new" || sort === "recent"}
                 isNew={isNewAccount(account)}
+                selectable
+                selected={isSelected(account.account_id)}
+                onToggleSelect={toggle}
               />
             ))}
           </div>

@@ -51,11 +51,17 @@ export default function AccountCard({
   creatorName,
   showAddedAt = false,
   isNew = false,
+  selectable = false,
+  selected = false,
+  onToggleSelect,
 }: {
   account: Account;
   creatorName?: string | null;
   showAddedAt?: boolean;
   isNew?: boolean;
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (account: Account) => void;
 }) {
   const addedLabel = showAddedAt ? formatAddedAt(account.created_at) : null;
   const tier = account.tier ?? followerTier(account.follower_count);
@@ -66,7 +72,21 @@ export default function AccountCard({
   const followerWord = account.platform === "YouTube" ? "subscribers" : "followers";
 
   return (
-    <div className={`result-card${isNew ? " result-card-new" : ""}`}>
+    <div
+      className={`result-card${selectable ? " result-card-selectable" : ""}${
+        isNew ? " result-card-new" : ""
+      }${selected ? " result-card-selected" : ""}`}
+    >
+      {selectable && (
+        <input
+          type="checkbox"
+          className="card-select"
+          checked={selected}
+          onChange={() => onToggleSelect?.(account)}
+          aria-label={`Select @${accountHandle(account)}`}
+        />
+      )}
+      <div className="result-body">
       <div className="result-header">
         <div>
           <div className="result-handle">
@@ -83,7 +103,7 @@ export default function AccountCard({
             )}
           </div>
           {account.display_name && (
-            <div style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>
+            <div style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>
               {account.display_name}
             </div>
           )}
@@ -117,6 +137,7 @@ export default function AccountCard({
             👤 {creatorName}
           </Link>
         )}
+      </div>
       </div>
     </div>
   );
