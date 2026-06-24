@@ -48,7 +48,7 @@ API runs at http://localhost:8000. Set `DATABASE_URL=postgresql://creator:creato
 Your project URL and anon key go in `.env`. The **database password** is separate — find it under **Project Settings → Database** in the Supabase dashboard (or reset it there if you don't have it).
 
 ```bash
-SUPABASE_URL=https://dugsdvoqlpqcagrhnyvc.supabase.co
+SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_DB_PASSWORD=your-database-password
 # Required on most networks — direct db.* host is IPv6-only
@@ -118,6 +118,53 @@ Quick summary:
 3. Set `API_ORIGIN` to your Render API URL in Cloudflare env vars
 
 Browsing works from bundled `influencers.json` without the API. **Discover new** needs `API_ORIGIN` + Render backend.
+
+## Live production via ngrok (current setup)
+
+The live site (`fluencerfinder` Worker / `rightfluencer.jasonneverdai.com`) proxies API
+calls to an **ngrok tunnel** that forwards to the **local** uvicorn server. So
+production only works while *both* of these are running on your machine:
+
+**Request path:** browser → Cloudflare Worker → `API_ORIGIN` (ngrok) → local uvicorn `:8000` → Supabase
+
+`API_ORIGIN` is set in `wrangler.toml` to the reserved ngrok domain
+`https://boots-amiable-dimple.ngrok-free.dev`.
+
+### Bring production back up
+
+If the live site shows **"Could not load accounts from the API"**, the tunnel (or the
+API) is down. Start both:
+
+```bash
+# 1) Start the backend API (from creator-discovery/)
+cd creator-discovery
+source .venv/bin/activate
+uvicorn app.main:app --reload --port 8000
+
+# 2) In another terminal, start the ngrok tunnel on the reserved domain
+ngrok http 8000 --url=boots-amiable-dimple.ngrok-free.dev
+```
+
+### Verify it's working
+
+```bash
+# Local API
+curl http://localhost:8000/health                       # {"status":"ok",...,"database":"supabase"}
+
+# Through the tunnel (what production actually hits)
+curl -H "ngrok-skip-browser-warning: 1" \
+  https://boots-amiable-dimple.ngrok-free.dev/health
+```
+
+Then refresh the live site.
+
+**Notes:**
+- Both processes must stay running. A reboot, logout, or sleeping the Mac takes
+  production's API offline (browsing still works from the local snapshot).
+- `ERR_NGROK_3200` ("endpoint is offline") means ngrok isn't running — just start it again.
+- Semantic search needs `OPENAI_API_KEY` set in `.env` (health shows `"mock_llm": false`).
+- To stop depending on your laptop, deploy the API to an always-on host (Render) and
+  repoint `API_ORIGIN` in `wrangler.toml`, then `wrangler deploy`.
 
 ## Environment Variables
 
