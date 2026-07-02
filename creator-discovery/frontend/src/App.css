@@ -239,6 +239,13 @@
 }
 
 @media (max-width: 860px) {
+  /* Stack topbar above content. Without this, .app's row flex renders the
+     topbar as a full-height column beside the content, squeezing the page
+     into the right half of the viewport. */
+  .app {
+    flex-direction: column;
+  }
+
   .mobile-topbar {
     display: flex;
   }
