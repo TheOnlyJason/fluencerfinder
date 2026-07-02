@@ -139,7 +139,8 @@ python scripts/backfill_profiles.py
 # Requires clone of https://github.com/manojkarthick/rightfluencer at ../rightfluencer
 python scripts/import_rightfluencer.py
 
-# Export JSON snapshot for fast frontend loading (data/ + frontend/public/)
+# Export JSON snapshot to data/ (add --include-public to also write
+# frontend/public/ — avoid for public deploys: the snapshot can contain emails)
 python scripts/export_influencers_json.py
 
 # Enrich YouTube accounts with recent video caption text for niche tagging

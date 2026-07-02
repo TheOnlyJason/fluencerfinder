@@ -22,11 +22,17 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    # Interactive docs would let a stranger drive every endpoint; expose them
+    # only in local SQLite dev or when explicitly enabled.
+    docs_on = settings.is_sqlite or settings.enable_docs
     app = FastAPI(
         title="Creator Discovery MVP",
         description="Multi-platform creator discovery and classification engine",
         version="0.1.0",
         lifespan=lifespan,
+        docs_url="/docs" if docs_on else None,
+        redoc_url="/redoc" if docs_on else None,
+        openapi_url="/openapi.json" if docs_on else None,
     )
     # Public read API (no cookies/auth), so allow any origin. This avoids CORS
     # edge cases with Cloudflare workers.dev / pages.dev / custom domains.

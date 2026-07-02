@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, model_validator
 
 from app.models.enums import Platform
 from app.utils.youtube import format_display_handle
@@ -62,6 +62,20 @@ class AccountRead(BaseModel):
     last_seen_at: datetime
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="after")
+    def _redact_contact_email(self) -> "AccountRead":
+        """Strip scraped contact emails unless explicitly exposed.
+
+        This is the single chokepoint for every account payload (list, search,
+        JSON export), so a public deployment never leaks contact emails. Enable
+        via EXPOSE_CONTACT_EMAILS=true on a private/trusted instance.
+        """
+        from app.core.config import get_settings
+
+        if self.contact_email is not None and not get_settings().expose_contact_emails:
+            self.contact_email = None
+        return self
 
     @computed_field  # type: ignore[prop-decorator]
     @property

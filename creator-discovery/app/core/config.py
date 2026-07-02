@@ -26,10 +26,35 @@ class Settings(BaseSettings):
     tavily_api_key: str = ""
     youtube_api_key: str = ""
     use_mock_discovery: bool = False
+    # Privacy: when False (default), scraped contact emails are stripped from all
+    # API responses and exports so a public deployment never leaks them. Set to
+    # True only on a private/trusted instance where you need emails for outreach.
+    expose_contact_emails: bool = False
+
+    # Security. Write/paid endpoints require a valid Supabase session token when
+    # Supabase is configured; admin endpoints additionally require the caller's
+    # email to be in this comma-separated allowlist (anyone can self-sign-up, so
+    # "logged in" alone must not authorize bulk/paid operations).
+    admin_emails: str = ""
+    # Per-user requests/minute for the paid /search endpoint (in-memory limiter).
+    search_rate_limit_per_min: int = 20
+    # Expose interactive API docs (/docs, /openapi.json). Off in production by
+    # default; auto-on for local SQLite dev.
+    enable_docs: bool = False
 
     @property
     def cors_origin_list(self) -> List[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def admin_email_list(self) -> List[str]:
+        return [e.strip().lower() for e in self.admin_emails.split(",") if e.strip()]
+
+    @property
+    def auth_enabled(self) -> bool:
+        # Enforce auth whenever Supabase is configured (i.e. the real backend);
+        # local SQLite dev / the test suite run without it.
+        return bool(self.supabase_url and self.supabase_anon_key)
 
     @property
     def use_mock_llm(self) -> bool:

@@ -72,6 +72,13 @@ information — `*.xlsx` source workbooks and generated `influencers.json` snaps
 git-ignored and must never be committed. Populate your own database with the seed/import
 scripts under [`creator-discovery/scripts/`](creator-discovery/scripts/).
 
+**Contact emails are private by default.** Scraped contact emails are stripped from every
+API response and export unless you opt in with `EXPOSE_CONTACT_EMAILS=true`. Keep this
+`false` on any public deployment; enable it only on a private/trusted instance where you
+need emails for outreach. This means a public deployment can browse the full catalog
+(handles, niches, follower counts, etc.) served from your backend without exposing anyone's
+email address.
+
 If you use this tool to collect public profile data, make sure you comply with each
 platform's Terms of Service and applicable privacy laws (GDPR/CCPA, etc.).
 

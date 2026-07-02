@@ -33,6 +33,6 @@ CORS also allows any `*.pages.dev` and `*.workers.dev` origin automatically.
 
 ## Architecture
 
-- **Browse/filter** → `influencers.json` (instant, no API)
+- **Browse/filter** → `/accounts` API with server-side pagination (no snapshot ships in the bundle — it could contain scraped contact emails)
 - **Discover** → browser calls Render directly (`VITE_API_URL` baked at build time)
 - **Health proxy** → `functions/_middleware.ts` at repo root (for same-origin `/health`)

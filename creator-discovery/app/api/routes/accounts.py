@@ -1,9 +1,10 @@
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, desc, func, nulls_last, or_
 from sqlmodel import Session, select
 
+from app.core.auth import require_admin
 from app.core.deps import get_db
 from app.models.account import Account
 from app.models.creator import Creator
@@ -107,20 +108,24 @@ def _apply_account_filters(
     if creator_id:
         stmt = stmt.where(Account.creator_id == creator_id)
     if q:
+        from app.core.config import get_settings
+
         pattern = f"%{q}%"
-        stmt = stmt.where(
-            or_(
-                Account.handle.ilike(pattern),
-                Account.display_name.ilike(pattern),
-                Account.bio_text.ilike(pattern),
-                Account.niche.ilike(pattern),
-                Account.location_text.ilike(pattern),
-                Account.contact_email.ilike(pattern),
-                Account.channel_type.ilike(pattern),
-                Account.hobbies.ilike(pattern),
-                Account.secondary_niches.ilike(pattern),
-            )
-        )
+        q_clauses = [
+            Account.handle.ilike(pattern),
+            Account.display_name.ilike(pattern),
+            Account.bio_text.ilike(pattern),
+            Account.niche.ilike(pattern),
+            Account.location_text.ilike(pattern),
+            Account.channel_type.ilike(pattern),
+            Account.hobbies.ilike(pattern),
+            Account.secondary_niches.ilike(pattern),
+        ]
+        # Only match against contact emails when they're exposed, so a public
+        # deployment can't probe whether an email exists via search.
+        if get_settings().expose_contact_emails:
+            q_clauses.append(Account.contact_email.ilike(pattern))
+        stmt = stmt.where(or_(*q_clauses))
     if min_followers is not None:
         stmt = stmt.where(Account.follower_count >= min_followers)
     if max_followers is not None:
@@ -146,7 +151,11 @@ def _to_account_reads(session: Session, accounts: List[Account]) -> List[Account
 
 
 @router.post("/ingest", response_model=AccountIngestResponse)
-async def ingest(request: AccountIngestRequest, session: Session = Depends(get_db)):
+async def ingest(
+    request: AccountIngestRequest,
+    session: Session = Depends(get_db),
+    _admin: dict = Depends(require_admin),
+):
     return await ingest_accounts(
         session,
         request.accounts,
@@ -156,15 +165,26 @@ async def ingest(request: AccountIngestRequest, session: Session = Depends(get_d
 
 
 @router.post("/classify", response_model=AccountClassifyResponse)
-async def classify(request: AccountClassifyRequest, session: Session = Depends(get_db)):
+async def classify(
+    request: AccountClassifyRequest,
+    session: Session = Depends(get_db),
+    _admin: dict = Depends(require_admin),
+):
     classified = 0
     skipped = 0
     results = []
 
+    # Each classify is a billed LLM call. The API requires an explicit, bounded
+    # list; classifying the entire catalog is an offline job (scripts/), not a
+    # single request that could fan out to thousands of paid calls.
     account_ids = request.account_ids
     if not account_ids:
-        accounts = session.exec(select(Account).where(Account.is_active == True)).all()  # noqa: E712
-        account_ids = [a.account_id for a in accounts]
+        raise HTTPException(
+            status_code=400,
+            detail="account_ids is required (bulk re-classification of all accounts is disabled via the API).",
+        )
+    if len(account_ids) > 50:
+        raise HTTPException(status_code=400, detail="Too many account_ids (max 50 per request).")
 
     for aid in account_ids:
         account = session.get(Account, aid)
@@ -249,16 +269,20 @@ def list_accounts(
 
     stmt = select(Account)
     stmt = _apply_account_filters(stmt, **base_filters)
+    # Every branch ends in the unique account_id: without a total order, ties
+    # (e.g. the same handle on two platforms) can be resolved differently by
+    # consecutive offset/limit queries, duplicating or skipping rows across pages.
     if sort == "followers":
         stmt = stmt.order_by(
             nulls_last(desc(Account.follower_count)),
             desc(Account.updated_at),
+            Account.account_id,
         )
     elif sort == "handle":
-        stmt = stmt.order_by(Account.handle.asc())
+        stmt = stmt.order_by(Account.handle.asc(), Account.account_id)
     else:
         # new / recent — when the account was first added to the database
-        stmt = stmt.order_by(desc(Account.created_at))
+        stmt = stmt.order_by(desc(Account.created_at), Account.account_id)
     stmt = stmt.offset(offset).limit(limit)
     accounts = session.exec(stmt).all()
 

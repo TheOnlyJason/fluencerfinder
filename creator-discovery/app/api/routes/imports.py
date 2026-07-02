@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, File, UploadFile
 from sqlmodel import Session
 
+from app.core.auth import require_admin
 from app.core.deps import get_db
 from app.services.csv_io import import_csv
 
@@ -13,6 +14,7 @@ async def import_csv_endpoint(
     file: UploadFile = File(...),
     auto_classify: bool = True,
     auto_resolve_identity: bool = True,
+    _admin: dict = Depends(require_admin),
 ):
     content = await file.read()
     return await import_csv(

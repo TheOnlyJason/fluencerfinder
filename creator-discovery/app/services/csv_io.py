@@ -57,6 +57,9 @@ async def import_csv(
 
 
 def export_csv(session: Session, platform: Optional[str] = None, niche: Optional[str] = None) -> str:
+    from app.core.config import get_settings
+
+    expose_emails = get_settings().expose_contact_emails
     stmt = select(Account).where(Account.is_active == True)  # noqa: E712
     if platform:
         try:
@@ -88,7 +91,7 @@ def export_csv(session: Session, platform: Optional[str] = None, niche: Optional
             "language": acc.language,
             "classification_confidence": acc.classification_confidence,
             "follower_count": acc.follower_count,
-            "contact_email": acc.contact_email,
+            "contact_email": acc.contact_email if expose_emails else None,
             "creator_id": acc.creator_id,
             "canonical_name": creator_name,
         })

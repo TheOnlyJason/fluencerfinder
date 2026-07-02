@@ -1,4 +1,10 @@
-"""Export influencers to data/influencers.json and frontend/public/influencers.json."""
+"""Export influencers to data/influencers.json.
+
+Deliberately does NOT write into frontend/public/: Vite copies public/ into the
+built bundle, so a snapshot there (which can contain scraped contact emails)
+would be published on the next deploy. Pass --include-public only if you
+understand that and want a bundled snapshot anyway.
+"""
 import sys
 from pathlib import Path
 
@@ -15,11 +21,14 @@ PUBLIC_PATH = ROOT / "frontend" / "public" / "influencers.json"
 
 
 def main() -> None:
+    paths = [DATA_PATH]
+    if "--include-public" in sys.argv[1:]:
+        paths.append(PUBLIC_PATH)
     with Session(engine) as session:
-        path = write_influencers_json(session, DATA_PATH, PUBLIC_PATH)
-    print(f"Exported influencers snapshot to:")
-    print(f"  {path}")
-    print(f"  {PUBLIC_PATH}")
+        write_influencers_json(session, *paths)
+    print("Exported influencers snapshot to:")
+    for p in paths:
+        print(f"  {p}")
 
 
 if __name__ == "__main__":

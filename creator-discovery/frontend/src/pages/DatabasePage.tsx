@@ -47,29 +47,39 @@ function buildAccountFilters(form: FilterForm): AccountFilters {
 
 export default function DatabasePage() {
   const { isSelected, toggle } = useSelection();
-  const [filters, setFilters] = useState({ ...EMPTY_FILTERS });
+  // Same initial reference for both so the mount-time debounce flush is an
+  // Object.is no-op instead of a spurious identity change that would cancel
+  // and re-issue the first fetch.
+  const [filters, setFilters] = useState<FilterForm>(EMPTY_FILTERS);
   const [sort, setSort] = useState<SortKey>("followers");
-  const [debouncedFilters, setDebouncedFilters] = useState({ ...EMPTY_FILTERS });
+  const [debouncedFilters, setDebouncedFilters] = useState<FilterForm>(EMPTY_FILTERS);
   const [catalog, setCatalog] = useState<Account[] | null>(null);
+  const [snapshotChecked, setSnapshotChecked] = useState(false);
   const [snapshotExportedAt, setSnapshotExportedAt] = useState<string | null>(null);
+  // Catalog (snapshot) mode: full filtered list, paginated client-side.
+  // API mode: just the current page of results, paginated server-side.
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [totalFiltered, setTotalFiltered] = useState(0);
   const [totalInDatabase, setTotalInDatabase] = useState(0);
   const [facets, setFacets] = useState<AccountFacets | null>(null);
   const [loadingList, setLoadingList] = useState(true);
   const [error, setError] = useState("");
   const [page, setPage] = useState(1);
+  // Bumped by the Retry button so a failed fetch can be re-issued even though
+  // none of the fetch effect's other deps (page, filters, sort) changed.
+  const [fetchTick, setFetchTick] = useState(0);
 
-  const totalPages = Math.max(1, Math.ceil(accounts.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pageStart = (currentPage - 1) * PAGE_SIZE;
   const pageAccounts = useMemo(
-    () => accounts.slice(pageStart, pageStart + PAGE_SIZE),
-    [accounts, pageStart]
+    () => (catalog ? accounts.slice(pageStart, pageStart + PAGE_SIZE) : accounts),
+    [catalog, accounts, pageStart]
   );
 
   useEffect(() => {
     setPage(1);
-  }, [accounts]);
+  }, [debouncedFilters, sort]);
 
   const goToPage = useCallback((next: number) => {
     setPage(next);
@@ -92,6 +102,7 @@ export default function DatabasePage() {
       const filtered = filterAccounts(source, cleaned);
       const sorted = sortAccounts(filtered, sortOverride ?? sort);
       setAccounts(sorted);
+      setTotalFiltered(sorted.length);
       setTotalInDatabase(source.length);
       setFacets(computeFacets(source));
       setLoadingList(false);
@@ -99,22 +110,8 @@ export default function DatabasePage() {
     [debouncedFilters, sort]
   );
 
-  const loadAccounts = useCallback(async () => {
-    setLoadingList(true);
-    setError("");
-    try {
-      const cleaned = buildAccountFilters(debouncedFilters);
-      const data = await listAccounts(cleaned, 500, sort);
-      setAccounts(data.items);
-      setTotalInDatabase(data.total_in_database);
-    } catch (err) {
-      console.error(err);
-      setError(apiErrorMessage("load"));
-    } finally {
-      setLoadingList(false);
-    }
-  }, [debouncedFilters, sort]);
-
+  // On mount: prefer the local snapshot (instant, offline-friendly); otherwise
+  // load facets and let the fetch effect below pull the first page from the API.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -123,30 +120,56 @@ export default function DatabasePage() {
       if (snapshot?.accounts?.length) {
         setCatalog(snapshot.accounts);
         setSnapshotExportedAt(snapshot.exported_at);
-        applyLocalCatalog(snapshot.accounts);
-        return;
+      } else {
+        try {
+          const data = await getAccountFacets();
+          if (!cancelled) setFacets(data);
+        } catch (err) {
+          console.error(err);
+        }
       }
-      try {
-        const data = await getAccountFacets();
-        if (!cancelled) setFacets(data);
-      } catch (err) {
-        console.error(err);
-      }
-      if (!cancelled) await loadAccounts();
+      if (!cancelled) setSnapshotChecked(true);
     })();
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (!catalog) {
-      loadAccounts();
+    if (!snapshotChecked) return;
+    if (catalog) {
+      applyLocalCatalog(catalog);
       return;
     }
-    applyLocalCatalog(catalog);
-  }, [catalog, debouncedFilters, sort, applyLocalCatalog, loadAccounts]);
+    // Server-side pagination: fetch just the current page so the whole
+    // database is browsable (the API caps a single request at 500 rows).
+    let cancelled = false;
+    (async () => {
+      setLoadingList(true);
+      setError("");
+      try {
+        const cleaned = buildAccountFilters(debouncedFilters);
+        const data = await listAccounts(cleaned, PAGE_SIZE, sort, pageStart);
+        if (cancelled) return;
+        setAccounts(data.items);
+        setTotalFiltered(data.total);
+        setTotalInDatabase(data.total_in_database);
+      } catch (err) {
+        if (!cancelled) {
+          console.error(err);
+          // Clear the previous page's rows so they aren't rendered under the
+          // new page's "Showing X–Y" label; the error banner + Retry take over.
+          setAccounts([]);
+          setError(apiErrorMessage("load"));
+        }
+      } finally {
+        if (!cancelled) setLoadingList(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshotChecked, catalog, debouncedFilters, sort, pageStart, fetchTick, applyLocalCatalog]);
 
   function updateFilter(key: keyof FilterForm, value: string) {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -250,21 +273,34 @@ export default function DatabasePage() {
         </div>
       </section>
 
-      {error && <div className="error">{error}</div>}
+      {error && (
+        <div className="error">
+          {error}{" "}
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setFetchTick((t) => t + 1)}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       <div className="results-meta">
         {loadingList
           ? "Loading accounts..."
-          : accounts.length === 0
-            ? hasActiveFilters
-              ? `Showing 0 of ${totalInDatabase} accounts`
-              : `${totalInDatabase} account${totalInDatabase === 1 ? "" : "s"} in database`
-            : `Showing ${pageStart + 1}–${Math.min(pageStart + PAGE_SIZE, accounts.length)} of ${accounts.length}${
-                hasActiveFilters ? ` (filtered from ${totalInDatabase})` : ""
-              }`}
+          : error
+            ? ""
+            : totalFiltered === 0
+              ? hasActiveFilters
+                ? `Showing 0 of ${totalInDatabase} accounts`
+                : `${totalInDatabase} account${totalInDatabase === 1 ? "" : "s"} in database`
+              : `Showing ${pageStart + 1}–${pageStart + pageAccounts.length} of ${totalFiltered}${
+                  hasActiveFilters ? ` (filtered from ${totalInDatabase})` : ""
+                }`}
       </div>
 
-      {!loadingList && accounts.length === 0 && (
+      {!loadingList && !error && totalFiltered === 0 && (
         <p style={{ color: "var(--text-muted)", marginBottom: "1.5rem" }}>
           {hasActiveFilters
             ? "No accounts match these filters. Try clearing filters or broadening your search."

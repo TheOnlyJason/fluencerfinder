@@ -4,6 +4,16 @@
 // can't force direct cross-origin calls (which ad blockers / CORS break).
 const API_BASE = "";
 
+import { supabase } from "./supabase";
+
+/** Authorization header carrying the current Supabase session token, for the
+ *  backend's auth-gated endpoints (/search, admin routes). Empty when signed out. */
+export async function authHeader(): Promise<Record<string, string>> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export function isApiConfigured(): boolean {
   return true;
 }
@@ -195,9 +205,10 @@ export type AccountSort = "followers" | "new" | "recent" | "handle";
 export async function listAccounts(
   filters: AccountFilters = {},
   limit = 500,
-  sort: AccountSort = "followers"
+  sort: AccountSort = "followers",
+  offset = 0
 ): Promise<AccountListResponse> {
-  const params = new URLSearchParams({ limit: String(limit), sort });
+  const params = new URLSearchParams({ limit: String(limit), sort, offset: String(offset) });
   for (const p of filters.platforms ?? []) params.append("platforms", p);
   for (const n of filters.niches ?? []) params.append("niches", n);
   for (const l of filters.locations ?? []) params.append("locations", l);
@@ -231,7 +242,7 @@ export async function searchCreators(
   try {
     const res = await fetch(`${API_BASE}/search`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await authHeader()) },
       body: JSON.stringify({
         query,
         platforms: filters.platforms?.length ? filters.platforms : undefined,

@@ -117,7 +117,10 @@ Quick summary:
 2. Connect repo to Cloudflare Pages — root directory `creator-discovery/frontend`
 3. Set `API_ORIGIN` to your Render API URL in Cloudflare env vars
 
-Browsing works from bundled `influencers.json` without the API. **Discover new** needs `API_ORIGIN` + Render backend.
+Browsing and **Discover new** both need `API_ORIGIN` + a reachable backend: the built bundle
+deliberately ships **no** `influencers.json` snapshot (it can contain scraped contact emails).
+`scripts/export_influencers_json.py` writes only to `data/` unless you pass `--include-public`
+— don't do that for a public deployment.
 
 ## Live production via ngrok (current setup)
 
@@ -160,7 +163,8 @@ Then refresh the live site.
 
 **Notes:**
 - Both processes must stay running. A reboot, logout, or sleeping the Mac takes
-  production's API offline (browsing still works from the local snapshot).
+  production's API offline — and with it the whole catalog (no snapshot ships in
+  the bundle anymore, so browsing depends on the API).
 - `ERR_NGROK_3200` ("endpoint is offline") means ngrok isn't running — just start it again.
 - Semantic search needs `OPENAI_API_KEY` set in `.env` (health shows `"mock_llm": false`).
 - To stop depending on your laptop, deploy the API to an always-on host (Render) and
