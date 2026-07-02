@@ -61,6 +61,9 @@ class ParsedDiscoveryQuery:
     location: Optional[str] = None
     min_followers: Optional[int] = None
     max_followers: Optional[int] = None
+    # Optional extras filled in by the LLM parser (regex parser leaves these None).
+    platforms: Optional[List[str]] = None
+    semantic_query: Optional[str] = None
 
     @property
     def provider_query(self) -> str:

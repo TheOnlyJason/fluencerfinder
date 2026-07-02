@@ -32,9 +32,16 @@ from app.services.classification.classifier import classify_account
 from app.services.identity.resolver import attach_or_create_creator, resolve_identity
 from app.services.providers.base import DiscoveredAccount, DiscoveryProvider
 from app.services.providers.mock_provider import MockDiscoveryProvider
+from app.services.embeddings.embedder import build_profile_text, embed_text
 from app.utils.fts import search_accounts_fts, sync_account_fts
 from app.utils.handles import build_profile_url, normalize_handle, strip_handle
 from app.utils.account_metrics import apply_follower_count, resolve_follower_count
+from app.utils.vector_search import (
+    rrf_fuse,
+    semantic_search_accounts,
+    store_embedding,
+    vector_supported,
+)
 from app.utils.query_parse import (
     ParsedDiscoveryQuery,
     account_matches_criteria,
@@ -58,14 +65,20 @@ def get_default_providers() -> List[DiscoveryProvider]:
     return providers
 
 
-def _resolve_search_criteria(request: SearchRequest) -> ParsedDiscoveryQuery:
-    parsed = parse_discovery_query(request.query)
+async def _resolve_search_criteria(request: SearchRequest) -> ParsedDiscoveryQuery:
+    # Prefer the LLM parser (understands natural language); fall back to regex.
+    from app.services.discovery.llm_query_parser import llm_parse_query
+
+    parsed = await llm_parse_query(request.query) or parse_discovery_query(request.query)
+    # Explicit request fields (from UI filters) always win over parsed values.
     return ParsedDiscoveryQuery(
         raw_query=request.query,
         topic=request.niche or parsed.topic,
         location=request.location or parsed.location,
         min_followers=request.min_followers if request.min_followers is not None else parsed.min_followers,
         max_followers=request.max_followers if request.max_followers is not None else parsed.max_followers,
+        platforms=getattr(parsed, "platforms", None),
+        semantic_query=getattr(parsed, "semantic_query", None),
     )
 
 
@@ -155,6 +168,10 @@ async def ingest_discovered_account(
     session.add(account)
     session.commit()
     session.refresh(account)
+
+    # Semantic search embedding (best-effort; Postgres + API key only).
+    await store_account_embedding(session, account)
+    session.commit()
     return account
 
 
@@ -239,13 +256,105 @@ def _search_local_db(
     return filtered[:limit]
 
 
+def _semantic_query_text(criteria: ParsedDiscoveryQuery) -> str:
+    """The phrase we embed to capture search intent.
+
+    Prefer the LLM's cleaned semantic query; otherwise use topic + location;
+    finally fall back to the raw query.
+    """
+    if criteria.semantic_query:
+        return criteria.semantic_query
+    parts = [criteria.topic] if criteria.topic else []
+    if criteria.location:
+        parts.append(criteria.location)
+    phrase = " ".join(p for p in parts if p).strip()
+    return phrase or criteria.raw_query
+
+
+async def _hybrid_local_search(
+    session: Session,
+    criteria: ParsedDiscoveryQuery,
+    *,
+    platforms: Optional[List[Platform]] = None,
+    limit: int = 40,
+) -> List[Account]:
+    """Combine keyword/FTS search with semantic vector search.
+
+    Keyword results give exact-match precision; vector results add semantic
+    recall (e.g. "meal prep" matches a "healthy recipes" bio). They're fused
+    with Reciprocal Rank Fusion. Falls back to keyword-only when embeddings or
+    pgvector aren't available.
+    """
+    keyword_accounts = _search_local_db(session, criteria, platforms=platforms, limit=limit * 2)
+
+    # Semantic candidates (Postgres + API key only).
+    semantic_pairs: List = []
+    if vector_supported():
+        embedding = await embed_text(_semantic_query_text(criteria))
+        if embedding:
+            semantic_pairs = semantic_search_accounts(session, embedding, limit=limit * 3)
+
+    if not semantic_pairs:
+        # Pure keyword path — already filtered by topic/location/followers.
+        return keyword_accounts[:limit]
+
+    keyword_ids = [a.account_id for a in keyword_accounts]
+    semantic_ids = [aid for aid, _ in semantic_pairs]
+    fused_ids = rrf_fuse(keyword_ids, semantic_ids)
+
+    # Keyword accounts already passed the (keyword) topic filter; semantic ones
+    # are matched by meaning, so we only enforce the *hard* structured filters
+    # (platform, location, follower range) on them — not the topic keyword.
+    keyword_id_set = set(keyword_ids)
+    cache = {a.account_id: a for a in keyword_accounts}
+
+    results: List[Account] = []
+    for aid in fused_ids:
+        acc = cache.get(aid) or session.get(Account, aid)
+        if not acc or not acc.is_active:
+            continue
+        if platforms and acc.platform not in platforms:
+            continue
+        if aid not in keyword_id_set:
+            # Semantic-only hit: apply hard filters but skip the topic keyword check.
+            if not account_matches_criteria(
+                acc,
+                topic=None,
+                location=criteria.location,
+                min_followers=criteria.min_followers,
+                max_followers=criteria.max_followers,
+            ):
+                continue
+        results.append(acc)
+        if len(results) >= limit:
+            break
+    return results
+
+
+async def store_account_embedding(session: Session, account: Account) -> None:
+    """Embed an account's profile and persist the vector (best-effort)."""
+    if not vector_supported():
+        return
+    try:
+        embedding = await embed_text(build_profile_text(account))
+        if embedding:
+            store_embedding(session, account.account_id, embedding)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Embedding store failed for %s: %s", account.account_id, exc)
+
+
 async def search_creators(
     session: Session,
     request: SearchRequest,
     providers: Optional[List[DiscoveryProvider]] = None,
 ) -> SearchResponse:
     providers = providers or get_default_providers()
-    criteria = _resolve_search_criteria(request)
+    criteria = await _resolve_search_criteria(request)
+    # Use platforms the LLM inferred from the text (e.g. "youtubers") when the
+    # caller didn't explicitly pass a platform filter.
+    effective_platforms = request.platforms
+    if not effective_platforms and criteria.platforms:
+        effective_platforms = [Platform(p) for p in criteria.platforms if p in {pl.value for pl in Platform}]
     discover_limit = request.limit
     if criteria.has_structured_filters or criteria.topic:
         discover_limit = min(150, max(request.limit * 8, 60))
@@ -254,10 +363,10 @@ async def search_creators(
     # (it was immediately overwritten) and added a slow round-trip to the DB.
     search_queries = build_discovery_search_queries(criteria)
 
-    local_accounts = _search_local_db(
+    local_accounts = await _hybrid_local_search(
         session,
         criteria,
-        platforms=request.platforms,
+        platforms=effective_platforms,
         limit=discover_limit,
     )
     from_db = len(local_accounts)
@@ -277,7 +386,7 @@ async def search_creators(
             provider_new = 0
             discover_kwargs = {
                 "query": provider_query,
-                "platforms": request.platforms,
+                "platforms": effective_platforms,
                 # Fetch only a few more than we'll ingest; fetching 150 results is slow.
                 "limit": min(discover_limit, max(DISCOVER_MAX_NEW * 3, 30)),
             }
