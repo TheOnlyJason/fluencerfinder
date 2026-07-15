@@ -212,8 +212,13 @@ def _search_local_db(
     accounts: List[Account] = []
 
     if account_ids:
+        # Batch-fetch in one query (preserving FTS rank order) instead of a
+        # per-id session.get — the loop was ~600 round-trips to the remote
+        # Supabase pooler and dominated search latency (~30s).
+        rows = session.exec(select(Account).where(Account.account_id.in_(account_ids))).all()
+        by_id = {a.account_id: a for a in rows}
         for aid in account_ids:
-            acc = session.get(Account, aid)
+            acc = by_id.get(aid)
             if acc and acc.is_active:
                 accounts.append(acc)
     else:
@@ -308,9 +313,16 @@ async def _hybrid_local_search(
     keyword_id_set = set(keyword_ids)
     cache = {a.account_id: a for a in keyword_accounts}
 
+    # Batch-fetch the semantic-only accounts (not already in the keyword cache)
+    # in one query instead of a per-id session.get inside the loop below.
+    missing_ids = [aid for aid in fused_ids if aid not in cache]
+    if missing_ids:
+        for acc in session.exec(select(Account).where(Account.account_id.in_(missing_ids))).all():
+            cache[acc.account_id] = acc
+
     results: List[Account] = []
     for aid in fused_ids:
-        acc = cache.get(aid) or session.get(Account, aid)
+        acc = cache.get(aid)
         if not acc or not acc.is_active:
             continue
         if platforms and acc.platform not in platforms:

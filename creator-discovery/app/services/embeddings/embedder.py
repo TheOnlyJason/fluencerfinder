@@ -46,7 +46,13 @@ def embed_texts_sync(texts: List[str]) -> Optional[List[List[float]]]:
         return None
     from openai import OpenAI
 
-    client = OpenAI(api_key=settings.openai_api_key, base_url=settings.openai_base_url)
+    # Offline/backfill path (scripts) — more generous than the request path.
+    client = OpenAI(
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_base_url,
+        timeout=30.0,
+        max_retries=2,
+    )
     out: List[List[float]] = []
     for i in range(0, len(texts), MAX_BATCH):
         batch = texts[i : i + MAX_BATCH]
@@ -62,7 +68,14 @@ async def embed_texts(texts: List[str]) -> Optional[List[List[float]]]:
     try:
         from openai import AsyncOpenAI
 
-        client = AsyncOpenAI(api_key=settings.openai_api_key, base_url=settings.openai_base_url)
+        # Short timeout: called inside the search request path; on failure the
+        # caller degrades to keyword-only search instead of hanging.
+        client = AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url,
+            timeout=8.0,
+            max_retries=1,
+        )
         resp = await client.embeddings.create(model=EMBED_MODEL, input=texts)
         return [d.embedding for d in resp.data]
     except Exception as exc:  # noqa: BLE001

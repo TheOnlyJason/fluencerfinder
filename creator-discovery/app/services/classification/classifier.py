@@ -89,7 +89,14 @@ async def _llm_classify(account: Account) -> ClassificationResult:
     try:
         from openai import AsyncOpenAI
 
-        client = AsyncOpenAI(api_key=settings.openai_api_key, base_url=settings.openai_base_url)
+        # Bounded so a hung connection can't stall discovery ingest (the SDK
+        # default is 600s); callers already handle classification failure.
+        client = AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url,
+            timeout=20.0,
+            max_retries=1,
+        )
         user_msg = CLASSIFICATION_USER_TEMPLATE.format(
             platform=account.platform.value,
             handle=account.handle,

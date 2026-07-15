@@ -51,7 +51,15 @@ async def llm_parse_query(raw_query: str) -> Optional[ParsedDiscoveryQuery]:
     try:
         from openai import AsyncOpenAI
 
-        client = AsyncOpenAI(api_key=settings.openai_api_key, base_url=settings.openai_base_url)
+        # Short timeout: this runs inside the search request BEFORE any time
+        # budget, and the SDK default (600s + retries) would hang the whole
+        # request. On timeout we fall back to the regex parser below.
+        client = AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url,
+            timeout=8.0,
+            max_retries=1,
+        )
         resp = await client.chat.completions.create(
             model=settings.openai_model,
             messages=[

@@ -18,6 +18,7 @@ _PLATFORM_HINTS = {
     Platform.TIKTOK: "tiktok.com",
     Platform.X: "x.com",
     Platform.YOUTUBE: "youtube.com",
+    Platform.TWITCH: "twitch.tv",
 }
 
 # Domains that aggregate influencer lists — scrape for profile links
@@ -42,6 +43,9 @@ _SOCIAL_URL_PATTERNS = {
     Platform.YOUTUBE: re.compile(
         r"https?://(?:www\.)?youtube\.com/@([a-zA-Z0-9._-]+)/?", re.I
     ),
+    Platform.TWITCH: re.compile(
+        r"https?://(?:www\.)?twitch\.tv/([a-zA-Z0-9_]{3,25})/?", re.I
+    ),
 }
 
 
@@ -64,7 +68,11 @@ class WebSearchDiscoveryProvider(DiscoveryProvider):
 
         base_queries = search_queries or [query]
         for platform in target_platforms:
-            hint = _PLATFORM_HINTS[platform]
+            # .get() so a platform added to the enum without a hint here skips
+            # (a hard KeyError used to kill discovery for ALL platforms).
+            hint = _PLATFORM_HINTS.get(platform)
+            if hint is None:
+                continue
             platform_results: List[dict] = []
             queries_for_platform = list(dict.fromkeys(
                 [f"{hint} {q}" for q in base_queries]
