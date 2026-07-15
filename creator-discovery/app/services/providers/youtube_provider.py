@@ -6,6 +6,7 @@ from app.core.config import get_settings
 from app.models.enums import Platform
 from app.services.providers.base import DiscoveredAccount, DiscoveryProvider, DiscoveryResult
 from app.utils.handles import normalize_handle, strip_handle
+from app.utils.location import iso_country_name
 from app.utils.youtube import build_youtube_profile_url
 
 
@@ -92,7 +93,11 @@ class YouTubeDiscoveryProvider(DiscoveryProvider):
                         channel_id=channel_id,
                     ),
                     bio_text=snippet.get("description", "")[:500] or None,
-                    location_text=snippet.get("country"),
+                    # snippet.country is a documented ISO alpha-2 code — here
+                    # "CA" really is Canada, so translate at the source rather
+                    # than letting free-text sanitization guess (or drop) it.
+                    location_text=iso_country_name(snippet.get("country"))
+                    or snippet.get("country"),
                     follower_count=subscriber_count,
                     source=self.name,
                 )

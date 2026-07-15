@@ -202,7 +202,18 @@ async def classify(
 
 @router.get("/facets", response_model=AccountFacetsResponse)
 def account_facets(session: Session = Depends(get_db)):
-    accounts = session.exec(select(Account).where(Account.is_active == True)).all()  # noqa: E712
+    from app.utils.location import location_facet_counts
+
+    # Only the columns facets need — hydrating full ORM rows (bios, embeddings)
+    # for every account made this endpoint needlessly heavy.
+    rows = session.exec(
+        select(
+            Account.platform,
+            Account.niche,
+            Account.channel_type,
+            Account.location_text,
+        ).where(Account.is_active == True)  # noqa: E712
+    ).all()
 
     def _unique(values: List[Optional[str]], *, skip_unknown: bool = False) -> List[str]:
         seen = set()
@@ -213,17 +224,24 @@ def account_facets(session: Session = Depends(get_db)):
             if skip_unknown and value.lower() == "unknown":
                 continue
             key = value.strip()
-            if key and key not in seen:
-                seen.add(key)
+            # Case-insensitive dedupe ("Fortnite" vs "fortnite")
+            fold = key.lower()
+            if key and fold not in seen:
+                seen.add(fold)
                 out.append(key)
         return sorted(out, key=str.lower)
 
+    # Locations: canonicalized, junk-filtered, ranked by creator count so the
+    # biggest markets (LA, NYC, ...) lead instead of an A–Z slice that cut off
+    # before ever reaching them.
+    locations = [name for name, _ in location_facet_counts(r[3] for r in rows)][:40]
+
     return AccountFacetsResponse(
-        platforms=_unique([a.platform.value for a in accounts]),
-        niches=_unique([a.niche for a in accounts], skip_unknown=True),
-        channel_types=_unique([a.channel_type for a in accounts], skip_unknown=True),
-        locations=_unique([a.location_text for a in accounts])[:40],
-        total=len(accounts),
+        platforms=_unique([r[0].value for r in rows]),
+        niches=_unique([r[1] for r in rows], skip_unknown=True),
+        channel_types=_unique([r[2] for r in rows], skip_unknown=True),
+        locations=locations,
+        total=len(rows),
     )
 
 

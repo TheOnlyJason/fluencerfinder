@@ -108,11 +108,18 @@ async def ingest_discovered_account(
 
     profile_url = discovered.profile_url or build_profile_url(discovered.platform, handle)
 
+    # Canonicalize the scraped location on write. Raw provider values are how
+    # junk ("Linktree") and un-mergeable variants ("NYC" vs "New York, NY")
+    # got into the catalog; a raw value must never clobber a curated one.
+    from app.utils.location import sanitize_location
+
+    clean_location = sanitize_location(discovered.location_text)
+
     if existing:
         existing.display_name = discovered.display_name or existing.display_name
         existing.profile_url = profile_url
         existing.bio_text = discovered.bio_text or existing.bio_text
-        existing.location_text = discovered.location_text or existing.location_text
+        existing.location_text = clean_location or existing.location_text
         existing.external_links = discovered.external_links or existing.external_links
         apply_follower_count(existing, discovered)
         existing.last_seen_at = datetime.utcnow()
@@ -126,7 +133,7 @@ async def ingest_discovered_account(
             display_name=discovered.display_name,
             profile_url=profile_url,
             bio_text=discovered.bio_text,
-            location_text=discovered.location_text,
+            location_text=clean_location,
             external_links=discovered.external_links,
             follower_count=resolve_follower_count(discovered),
         )
@@ -313,6 +320,12 @@ async def _hybrid_local_search(
     keyword_id_set = set(keyword_ids)
     cache = {a.account_id: a for a in keyword_accounts}
 
+    # Semantic-only hits must clear a similarity floor. Without it, "similar
+    # vibe" profiles (e.g. gym motivators for a gamers query) leak in on weak
+    # cosine scores; keyword-matched accounts are never gated by this.
+    min_similarity = get_settings().semantic_min_similarity
+    high_confidence = {aid for aid, score in semantic_pairs if score >= min_similarity}
+
     # Batch-fetch the semantic-only accounts (not already in the keyword cache)
     # in one query instead of a per-id session.get inside the loop below.
     missing_ids = [aid for aid in fused_ids if aid not in cache]
@@ -328,6 +341,8 @@ async def _hybrid_local_search(
         if platforms and acc.platform not in platforms:
             continue
         if aid not in keyword_id_set:
+            if aid not in high_confidence:
+                continue
             # Semantic-only hit: apply hard filters but skip the topic keyword check.
             if not account_matches_criteria(
                 acc,

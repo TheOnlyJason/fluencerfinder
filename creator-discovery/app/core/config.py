@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     admin_emails: str = ""
     # Per-user requests/minute for the paid /search endpoint (in-memory limiter).
     search_rate_limit_per_min: int = 20
+    # Minimum cosine similarity for a semantic-ONLY hit to enter search results
+    # (keyword-matched accounts are unaffected). Measured on real data:
+    # on-topic accounts score ≥0.44 for text-embedding-3-small; off-topic
+    # "similar vibe" profiles (the gym-people-for-a-gamers-query leak) < 0.44.
+    semantic_min_similarity: float = 0.44
     # Expose interactive API docs (/docs, /openapi.json). Off in production by
     # default; auto-on for local SQLite dev.
     enable_docs: bool = False

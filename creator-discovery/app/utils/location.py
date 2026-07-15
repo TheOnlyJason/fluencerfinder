@@ -33,6 +33,13 @@ _PLACES: tuple[tuple[str, str], ...] = (
     ("hollywood", "Los Angeles, CA"),
     ("socal", "Southern California"),
     ("nyc", "New York, NY"),
+    ("san jose", "San Jose, CA"),
+    ("sacramento", "Sacramento, CA"),
+    ("long beach", "Long Beach, CA"),
+    ("anaheim", "Anaheim, CA"),
+    ("irvine", "Irvine, CA"),
+    ("oakland", "Oakland, CA"),
+    ("orange county", "Orange County, CA"),
     ("atlanta", "Atlanta, GA"),
     ("austin", "Austin, TX"),
     ("boston", "Boston, MA"),
@@ -98,6 +105,39 @@ _PLACES: tuple[tuple[str, str], ...] = (
     ("scottsdale", "Phoenix, AZ"),
     ("honolulu", "Honolulu, HI"),
 )
+
+# City abbreviations that must match CASE-SENSITIVELY as standalone words.
+# ("la" can't go in _PLACES — it would match Spanish/French text; "LA" is safe.)
+_ABBREVIATIONS: dict[str, str] = {
+    "LA": "Los Angeles, CA",
+    "SD": "San Diego, CA",
+    "SF": "San Francisco, CA",
+    "NYC": "New York, NY",
+    "OC": "Orange County, CA",
+    "ATL": "Atlanta, GA",
+    "DFW": "Dallas, TX",
+    "PHX": "Phoenix, AZ",
+    "LV": "Las Vegas, NV",
+    "SLC": "Salt Lake City, UT",
+    "KC": "Kansas City, MO",
+    "PDX": "Portland, OR",
+    "SEA": "Seattle, WA",
+}
+# ISO codes that double as US state abbreviations (CA=California, IN=Indiana,
+# DE=Delaware, ID=Idaho) — never map these to countries from free text.
+_AMBIGUOUS_ISO = frozenset({"CA", "IN", "DE", "ID"})
+
+
+def _match_abbreviations(text: str) -> Optional[str]:
+    """Match a city abbreviation only when it's the ENTIRE string.
+
+    Substring matching misfires badly on bios ("LV COLLECTION HAUL" → Las
+    Vegas, "best SD cards" → San Diego). Whole-string matching still covers
+    the real cases: location fields ("LA") and extracted query fragments
+    ("gamers in LA" → fragment "LA").
+    """
+    return _ABBREVIATIONS.get(text.strip())
+
 
 # Words that are not place names when captured after "from"
 _REJECT_LEAD_WORDS = frozenset({
@@ -264,7 +304,11 @@ _REJECT_LOCATION_RE = re.compile(
     r"@|\.com|\.org|\.net|https?://|www\.|\d{4}|"
     r'["\']|enter to win|giveaway|subscribe|follow me|packed wi|smartphone|'
     r"\(\@|tweet|retweet|youtube\.com|tiktok\.com|instagram\.com|"
-    r"\btiktok\b|\bgaming\b|grin about|adopted|product updates",
+    r"\btiktok\b|\bgaming\b|grin about|adopted|product updates|"
+    # Link services, platforms, and non-places that scrapers mistake for cities
+    r"\blinktree\b|\blinktr\b|\bbeacons\b|\bdiscord\b|\btwitch\b|\byoutube\b|"
+    r"\bfortnite\b|\broblox\b|\bminecraft\b|\bonlyfans\b|\bpatreon\b|\bcameo\b|"
+    r"\bworldwide\b|\beverywhere\b|\bmetaverse\b|\bonline\b|\binternet\b",
     re.I,
 )
 
@@ -294,6 +338,7 @@ _CANONICAL_VALUES = frozenset(
     | set(_ISO_COUNTRY.values())
     | set(_HANDLE_HINTS.values())
     | set(_AREA_CODES.values())
+    | set(_ABBREVIATIONS.values())
 )
 
 
@@ -336,6 +381,14 @@ def sanitize_location(loc: Optional[str]) -> Optional[str]:
     if not loc:
         return None
     cleaned = loc.strip().strip("\"'")
+    # Bare ISO country codes ("US", "UK") and city abbreviations ("LA", "NYC")
+    # are valid but wouldn't survive is_valid_location's shape checks. Only
+    # accept codes WRITTEN in uppercase ("it"/"Us" are English words, not
+    # Italy/USA), and never ones that double as US states (_AMBIGUOUS_ISO).
+    if cleaned in _ISO_COUNTRY and cleaned.isupper() and cleaned not in _AMBIGUOUS_ISO:
+        return _ISO_COUNTRY[cleaned]
+    if cleaned in _ABBREVIATIONS:
+        return _ABBREVIATIONS[cleaned]
     if not is_valid_location(cleaned):
         return None
     known = _match_places(cleaned)
@@ -423,15 +476,23 @@ def _match_area_code(text: str) -> Optional[str]:
 
 def _match_iso_country(text: str) -> Optional[str]:
     stripped = text.strip()
-    if len(stripped) == 2 and stripped.upper() in _ISO_COUNTRY:
-        return _ISO_COUNTRY[stripped.upper()]
+    # Bare code: must be WRITTEN uppercase ("it" is a word, not Italy) and not
+    # collide with a US state abbreviation (CA/IN/DE/ID → see _AMBIGUOUS_ISO).
+    if (
+        len(stripped) == 2
+        and stripped.isupper()
+        and stripped in _ISO_COUNTRY
+        and stripped not in _AMBIGUOUS_ISO
+    ):
+        return _ISO_COUNTRY[stripped]
+    # With explicit "country:" context an ambiguous code is fine (country: CA
+    # really is Canada) — but the code itself must be uppercase as written.
     match = re.search(
         r"(?:country|nation|based in|located in)\s*:?\s*([A-Z]{2})\b",
         text,
-        re.I,
     )
     if match:
-        code = match.group(1).upper()
+        code = match.group(1)
         if code in _ISO_COUNTRY:
             return _ISO_COUNTRY[code]
     return None
@@ -482,6 +543,7 @@ def infer_location(
     for text in combined_parts:
         candidates.append(_match_explicit(text))
 
+    candidates.append(_match_abbreviations(combined))
     candidates.append(_match_places(combined))
     candidates.append(_match_hashtags(combined))
     candidates.append(_match_locale_hints(combined))
@@ -505,3 +567,80 @@ def infer_location(
 def parse_location(*texts: Optional[str]) -> Optional[str]:
     """Backward-compatible alias."""
     return infer_location(*texts)
+
+
+def iso_country_name(code: Optional[str]) -> Optional[str]:
+    """Country name for an ISO alpha-2/3 code from a TRUSTED source.
+
+    Unlike free-text inference, an API that documents its field as a country
+    code (e.g. YouTube's snippet.country) is unambiguous — "CA" there really
+    is Canada — so no US-state exclusion applies.
+    """
+    if not code:
+        return None
+    return _ISO_COUNTRY.get(code.strip().upper())
+
+
+# Whole-value junk classification for destructive paths (e.g. the location
+# backfill clearing a field). Substring blacklists are for *validation*; a
+# value must BE junk, not merely contain a blacklisted word, before we erase
+# data ("Brecon Beacons" contains "beacons" but is a real Welsh region).
+_JUNK_EXACT = frozenset({
+    "linktree", "linktr.ee", "beacons", "beacons.ai", "stan.store",
+    "discord", "twitch", "youtube", "tiktok", "instagram", "facebook",
+    "onlyfans", "patreon", "cameo", "fortnite", "roblox", "minecraft",
+    "gaming", "worldwide", "everywhere", "online", "internet", "metaverse",
+    "earth", "the internet", "link in bio", "linkinbio", "grandma",
+})
+
+
+def is_junk_location(value: Optional[str]) -> bool:
+    """True only when the WHOLE value is clearly not a place."""
+    if not value:
+        return False
+    folded = value.strip().strip("\"'").casefold()
+    if folded in _JUNK_EXACT:
+        return True
+    return bool(re.search(r"https?://|www\.|\.com\b|\.gg\b|@", folded))
+
+
+def location_facet_counts(values: Iterable[Optional[str]]) -> list[tuple[str, int]]:
+    """Canonicalize raw location_text values into a ranked facet list.
+
+    - Merges variants ("Los Angeles" + "Los Angeles, CA" → one entry),
+      case-insensitively ("POMONA" corroborates "Pomona")
+    - Drops junk (link services, URLs, platform names)
+    - Hides single-word values that aren't known places unless several
+      creators share them (a real city will recur; "Grandma" won't)
+    - Ranks by creator count (desc) so the biggest markets lead the dropdown
+      instead of an alphabetical slice that never reached the letter L.
+    """
+    from collections import Counter
+
+    counts: Counter[str] = Counter()
+    display: dict[str, str] = {}
+    for value in values:
+        canonical = sanitize_location(value)
+        if not canonical:
+            continue
+        key = canonical.casefold()
+        counts[key] += 1
+        # Prefer dictionary-canonical casing; otherwise first-seen wins.
+        if key not in display or canonical in _CANONICAL_VALUES:
+            display[key] = canonical
+
+    def _keep(name: str, count: int) -> bool:
+        if name in _CANONICAL_VALUES:
+            return True
+        if len(name.split()) >= 2 or "," in name:
+            return True  # "City, ST" style — structurally a place
+        return count >= 3  # unknown single word: require corroboration
+
+    return sorted(
+        (
+            (display[key], count)
+            for key, count in counts.items()
+            if _keep(display[key], count)
+        ),
+        key=lambda item: (-item[1], item[0].lower()),
+    )
