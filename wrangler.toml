@@ -6,10 +6,10 @@ compatibility_date = "2024-09-23"
 # the Render backend from the same origin (see worker.js). Same-origin calls
 # avoid CORS and ad-blocker (ERR_BLOCKED_BY_CLIENT) issues.
 [vars]
-# Backend the Worker proxies API paths to. Currently a local dev server exposed
-# via an ngrok static domain. Repoint here (or override in the dashboard) to
-# switch backends. Defined in config so `wrangler deploy` can't wipe it.
-API_ORIGIN = "https://boots-amiable-dimple.ngrok-free.dev"
+# Backend the Worker proxies API paths to. Cloud Run (always-on, scales to zero
+# → free at idle), so production no longer depends on a local dev machine.
+# Repoint here (or override in the dashboard) to switch backends.
+API_ORIGIN = "https://fluencerfinder-1007753976919.us-east1.run.app"
 
 [assets]
 directory = "creator-discovery/frontend/dist"

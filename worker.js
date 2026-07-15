@@ -7,7 +7,7 @@
 // Cloudflare dashboard / wrangler vars), so it can be repointed (Render, Cloud
 // Run, a local ngrok tunnel, ...) without editing code. FALLBACK_ORIGIN is only
 // used if API_ORIGIN is unset.
-const FALLBACK_ORIGIN = "https://fluencerfinder-minc35gbhq-ue.a.run.app";
+const FALLBACK_ORIGIN = "https://fluencerfinder-1007753976919.us-east1.run.app";
 const API_PREFIXES = [
   "/health",
   "/search",
