@@ -28,19 +28,27 @@ export default function SearchPage() {
   const [error, setError] = useState("");
   const [apiStatus, setApiStatus] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const [onlyNew, setOnlyNew] = useState(false);
   const [page, setPage] = useState(1);
 
-  const totalPages = Math.max(1, Math.ceil(results.length / PAGE_SIZE));
+  // "Only new" hides creators already in the database, leaving just the ones
+  // this search discovered on the web (source === "provider").
+  const visibleResults = useMemo(
+    () => (onlyNew ? results.filter((r) => newAccountIds.has(r.account_id)) : results),
+    [onlyNew, results, newAccountIds]
+  );
+
+  const totalPages = Math.max(1, Math.ceil(visibleResults.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pageStart = (currentPage - 1) * PAGE_SIZE;
   const pageResults = useMemo(
-    () => results.slice(pageStart, pageStart + PAGE_SIZE),
-    [results, pageStart]
+    () => visibleResults.slice(pageStart, pageStart + PAGE_SIZE),
+    [visibleResults, pageStart]
   );
 
   useEffect(() => {
     setPage(1);
-  }, [results]);
+  }, [visibleResults]);
 
   useEffect(() => {
     if (!import.meta.env.PROD) return;
@@ -150,13 +158,26 @@ export default function SearchPage() {
         </div>
       )}
 
-      {hasSearched && !discovering && results.length === 0 && (
+      {hasSearched && newAccountIds.size > 0 && (
+        <label className="deep-web-toggle" style={{ marginBottom: "1rem" }}>
+          <input
+            type="checkbox"
+            checked={onlyNew}
+            onChange={(e) => setOnlyNew(e.target.checked)}
+          />
+          <span>Only show new profiles ({newAccountIds.size} not already in your database)</span>
+        </label>
+      )}
+
+      {hasSearched && !discovering && visibleResults.length === 0 && (
         <p style={{ color: "var(--text-muted)", marginBottom: "1.5rem" }}>
-          No creators matched. Try a broader query, or enable “search the web” to find new profiles.
+          {onlyNew
+            ? "No new profiles this search — everything found is already in your database. Uncheck “Only show new” to see them."
+            : "No creators matched. Try a broader query, or enable “search the web” to find new profiles."}
         </p>
       )}
 
-      {results.length > 0 && (
+      {visibleResults.length > 0 && (
         <>
           <div className="results-grid">
             {pageResults.map((account) => (
