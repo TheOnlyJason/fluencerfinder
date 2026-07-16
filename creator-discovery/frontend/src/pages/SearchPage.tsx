@@ -110,7 +110,7 @@ export default function SearchPage() {
           <button type="submit" className="btn btn-primary" disabled={discovering || !query.trim()}>
             {discovering
               ? deepWeb
-                ? "Searching the web (~60s)..."
+                ? "Searching the web (~90s)..."
                 : "Searching..."
               : deepWeb
                 ? "Search the web"
@@ -125,7 +125,7 @@ export default function SearchPage() {
             disabled={discovering}
           />
           <span>
-            Also search the web for new creators (slower, ~60s — finds and saves profiles not yet in
+            Also search the web for new creators (slower, ~90s — finds and saves profiles not yet in
             your database)
           </span>
         </label>

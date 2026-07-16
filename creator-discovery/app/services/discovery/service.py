@@ -18,8 +18,13 @@ def _env_int(name: str, default: int) -> int:
 
 
 # Discovery happens inside the HTTP request, so it must finish well under the
-# frontend timeout. Cap how much provider work runs per request.
-DISCOVER_TIME_BUDGET_S = _env_int("DISCOVER_TIME_BUDGET_S", 35)
+# frontend's 120s timeout. Two separate budgets: an overall wall-clock cap for
+# the whole phase, and a tighter cap on any single provider's SEARCH so the
+# (slow, ~30s) web scrape can't eat the whole budget and leave no time to
+# actually ingest the profiles it found (which showed up as "0 new profiles
+# saved" despite the search finding dozens).
+DISCOVER_TIME_BUDGET_S = _env_int("DISCOVER_TIME_BUDGET_S", 80)
+DISCOVER_SEARCH_BUDGET_S = _env_int("DISCOVER_SEARCH_BUDGET_S", 40)
 DISCOVER_MAX_NEW = _env_int("DISCOVER_MAX_NEW", 12)
 DISCOVER_ACCOUNT_TIMEOUT_S = _env_int("DISCOVER_ACCOUNT_TIMEOUT_S", 15)
 
@@ -97,6 +102,7 @@ async def ingest_discovered_account(
     *,
     auto_classify: bool = True,
     auto_resolve: bool = True,
+    enrich: bool = True,
 ) -> Account:
     handle = normalize_handle(discovered.handle)
     existing = session.exec(
@@ -148,7 +154,12 @@ async def ingest_discovered_account(
         )
         attach_or_create_creator(session, account, resolution)
 
-    if account.platform == Platform.YOUTUBE:
+    # Slow network enrichments (YouTube captions, follower + profile scraping)
+    # are skipped in the request path (enrich=False) — each is several seconds
+    # and, run per-account, they starved ingestion so live discovery saved
+    # ~0 profiles. They're deferred to the offline backfill scripts. Classify
+    # + embed stay so the saved profile is immediately searchable.
+    if enrich and account.platform == Platform.YOUTUBE:
         from app.services.enrichment.youtube_captions import enrich_youtube_captions
 
         await enrich_youtube_captions(account)
@@ -156,20 +167,21 @@ async def ingest_discovered_account(
     if auto_classify:
         await classify_account(session, account)
 
-    if not account.follower_count:
+    if enrich and not account.follower_count:
         from app.services.enrichment.follower_enrichment import enrich_follower_count
 
         count = await enrich_follower_count(account, quick=True)
         if count:
             account.follower_count = count
 
-    from app.services.enrichment.profile_enrichment import (
-        apply_profile_enrichment,
-        enrich_account_profile,
-    )
+    if enrich:
+        from app.services.enrichment.profile_enrichment import (
+            apply_profile_enrichment,
+            enrich_account_profile,
+        )
 
-    profile = await enrich_account_profile(account, quick=True)
-    apply_profile_enrichment(account, profile)
+        profile = await enrich_account_profile(account, quick=True)
+        apply_profile_enrichment(account, profile)
 
     sync_account_fts(session, account)
     session.add(account)
@@ -419,24 +431,25 @@ async def search_creators(
             }
             if getattr(provider, "name", "") == "web_search":
                 discover_kwargs["search_queries"] = search_queries
-            # Bound discovery by the remaining budget. Without this, a slow
-            # provider (web search scrapes many pages at 20-30s each) can run
-            # for minutes and blow past the frontend timeout.
+            # Cap the SEARCH at DISCOVER_SEARCH_BUDGET_S (not the whole remaining
+            # budget) so ingestion — which runs against the overall deadline
+            # below — always gets time. Without this, a ~34s web scrape against
+            # a 35s budget left ~1s to ingest and saved nothing.
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
             try:
                 result = await asyncio.wait_for(
                     provider.discover(**discover_kwargs),
-                    timeout=remaining,
+                    timeout=min(DISCOVER_SEARCH_BUDGET_S, remaining),
                 )
             except asyncio.TimeoutError:
                 logger.warning(
-                    "Provider %s discover exceeded time budget (%.0fs)",
+                    "Provider %s search exceeded its budget (%.0fs); moving on",
                     getattr(provider, "name", provider),
-                    DISCOVER_TIME_BUDGET_S,
+                    DISCOVER_SEARCH_BUDGET_S,
                 )
-                break
+                continue
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Provider %s discover failed: %s", getattr(provider, "name", provider), exc)
                 continue
@@ -451,7 +464,13 @@ async def search_creators(
                 seen.add(key)
                 try:
                     account = await asyncio.wait_for(
-                        ingest_discovered_account(session, discovered),
+                        # Light ingest: skip the slow scraping enrichment AND
+                        # identity resolution (a ~57s LLM cross-platform link
+                        # step). Both are deferred so many profiles save within
+                        # the budget; the account is still classified + embedded.
+                        ingest_discovered_account(
+                            session, discovered, enrich=False, auto_resolve=False
+                        ),
                         timeout=DISCOVER_ACCOUNT_TIMEOUT_S,
                     )
                 except (asyncio.TimeoutError, Exception) as exc:  # noqa: BLE001

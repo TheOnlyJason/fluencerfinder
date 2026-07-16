@@ -112,7 +112,14 @@ async def _llm_identity_boost(
             for c, score, signals in candidates[:5]
         ], indent=2)
 
-        client = AsyncOpenAI(api_key=settings.openai_api_key, base_url=settings.openai_base_url)
+        # Bounded — the SDK default is 600s; a hung identity call must not stall
+        # the caller (the offline /identity/resolve admin path).
+        client = AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url,
+            timeout=20.0,
+            max_retries=1,
+        )
         user_msg = IDENTITY_USER_TEMPLATE.format(
             platform=new.get("platform", ""),
             handle=new.get("handle", ""),
