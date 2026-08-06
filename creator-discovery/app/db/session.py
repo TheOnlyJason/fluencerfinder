@@ -41,6 +41,11 @@ def _migrate_schema() -> None:
     new_columns = [
         ("follower_count", "INTEGER"),
         ("contact_email", "VARCHAR"),
+        # Geo (radius search) — city-centroid coordinates from location_text.
+        ("latitude", "DOUBLE PRECISION"),
+        ("longitude", "DOUBLE PRECISION"),
+        ("geo_precision", "VARCHAR"),
+        ("geocoded_at", "TIMESTAMP"),
     ]
     with engine.connect() as conn:
         if settings.is_sqlite:

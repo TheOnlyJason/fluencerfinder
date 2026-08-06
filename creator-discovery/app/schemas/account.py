@@ -58,6 +58,8 @@ class AccountRead(BaseModel):
     external_links: Optional[str] = None
     follower_count: Optional[int] = None
     classification_confidence: Optional[float] = None
+    # Distance from a radius-search center, set only on "near" searches.
+    distance_miles: Optional[float] = None
     is_active: bool = True
     last_seen_at: datetime
     created_at: datetime
@@ -96,6 +98,11 @@ class AccountListResponse(BaseModel):
     items: List[AccountRead]
     total: int
     total_in_database: int
+    # Radius search only: creators with a location too coarse to place precisely
+    # (e.g. state-level) that the UI can offer to include.
+    approximate_nearby: int = 0
+    # Radius search only: the resolved center place name (echoed back for the UI).
+    near_resolved: Optional[str] = None
 
 
 class AccountFacetsResponse(BaseModel):

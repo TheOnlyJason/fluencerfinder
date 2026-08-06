@@ -121,6 +121,11 @@ export default function AccountCard({
           <span className="tag tag-niche">{account.niche}</span>
         )}
         {showChannelType(account) && <span className="tag">{account.channel_type}</span>}
+        {account.distance_miles != null && (
+          <span className="tag tag-distance" title="Distance from your search location">
+            📍 {account.distance_miles < 1 ? "< 1" : Math.round(account.distance_miles)} mi away
+          </span>
+        )}
         {account.location_text && <span className="tag">📍 {account.location_text}</span>}
         {account.contact_email && (
           <a href={`mailto:${account.contact_email}`} className="tag tag-email">

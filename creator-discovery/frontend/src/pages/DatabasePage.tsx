@@ -4,6 +4,7 @@ import {
   AccountFacets,
   AccountFilters,
   apiErrorMessage,
+  fetchGeoPlaces,
   getAccountFacets,
   listAccounts,
   TIER_OPTIONS,
@@ -30,7 +31,9 @@ const EMPTY_FILTERS = {
 };
 
 type FilterForm = typeof EMPTY_FILTERS;
-type SortKey = "followers" | "new" | "recent" | "handle";
+type SortKey = "followers" | "new" | "recent" | "handle" | "distance";
+
+const RADIUS_OPTIONS = [5, 10, 15, 25, 50];
 
 const PAGE_SIZE = 20;
 
@@ -68,6 +71,14 @@ export default function DatabasePage() {
   // Bumped by the Retry button so a failed fetch can be re-issued even though
   // none of the fetch effect's other deps (page, filters, sort) changed.
   const [fetchTick, setFetchTick] = useState(0);
+  // Radius ("near") search state.
+  const [near, setNear] = useState("");
+  const [debouncedNear, setDebouncedNear] = useState("");
+  const [radius, setRadius] = useState(25);
+  const [geoPlaces, setGeoPlaces] = useState<string[]>([]);
+  const [approximateNearby, setApproximateNearby] = useState(0);
+  // The place name the backend actually resolved (null = not found).
+  const [nearResolved, setNearResolved] = useState<string | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -79,7 +90,30 @@ export default function DatabasePage() {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedFilters, sort]);
+  }, [debouncedFilters, sort, debouncedNear, radius]);
+
+  // Debounce the free-text "Near" input so typing doesn't fire a fetch per key.
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedNear(near.trim()), 400);
+    return () => window.clearTimeout(timer);
+  }, [near]);
+
+  // Keep the sort control honest: default to "Nearest" when a location becomes
+  // active, and revert off "distance" when it clears (so the dropdown value
+  // always matches the actual ordering). Only fires on near transitions, so an
+  // explicit sort choice while searching is preserved.
+  useEffect(() => {
+    if (debouncedNear) {
+      setSort((s) => (s === "followers" ? "distance" : s));
+    } else {
+      setSort((s) => (s === "distance" ? "followers" : s));
+    }
+  }, [debouncedNear]);
+
+  // Load the place picker options once.
+  useEffect(() => {
+    fetchGeoPlaces().then(setGeoPlaces).catch(() => {});
+  }, []);
 
   const goToPage = useCallback((next: number) => {
     setPage(next);
@@ -87,8 +121,10 @@ export default function DatabasePage() {
   }, []);
 
   const hasActiveFilters = useMemo(
-    () => Object.values(filters).some((v) => (Array.isArray(v) ? v.length > 0 : Boolean(v))),
-    [filters]
+    () =>
+      Boolean(near) ||
+      Object.values(filters).some((v) => (Array.isArray(v) ? v.length > 0 : Boolean(v))),
+    [filters, near]
   );
 
   useEffect(() => {
@@ -137,7 +173,9 @@ export default function DatabasePage() {
 
   useEffect(() => {
     if (!snapshotChecked) return;
-    if (catalog) {
+    // Radius search needs the API (the client-side snapshot has no coordinates),
+    // so a "near" query forces API mode even if a snapshot is loaded.
+    if (catalog && !debouncedNear) {
       applyLocalCatalog(catalog);
       return;
     }
@@ -149,11 +187,20 @@ export default function DatabasePage() {
       setError("");
       try {
         const cleaned = buildAccountFilters(debouncedFilters);
-        const data = await listAccounts(cleaned, PAGE_SIZE, sort, pageStart);
+        if (debouncedNear) {
+          cleaned.near = debouncedNear;
+          cleaned.radius_miles = radius;
+        }
+        // "distance" is only valid with a location; fall back otherwise.
+        const effectiveSort: SortKey =
+          sort === "distance" && !debouncedNear ? "followers" : sort;
+        const data = await listAccounts(cleaned, PAGE_SIZE, effectiveSort, pageStart);
         if (cancelled) return;
         setAccounts(data.items);
         setTotalFiltered(data.total);
         setTotalInDatabase(data.total_in_database);
+        setApproximateNearby(debouncedNear ? data.approximate_nearby ?? 0 : 0);
+        setNearResolved(debouncedNear ? data.near_resolved ?? null : null);
       } catch (err) {
         if (!cancelled) {
           console.error(err);
@@ -169,7 +216,7 @@ export default function DatabasePage() {
     return () => {
       cancelled = true;
     };
-  }, [snapshotChecked, catalog, debouncedFilters, sort, pageStart, fetchTick, applyLocalCatalog]);
+  }, [snapshotChecked, catalog, debouncedFilters, sort, debouncedNear, radius, pageStart, fetchTick, applyLocalCatalog]);
 
   function updateFilter(key: keyof FilterForm, value: string) {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -185,6 +232,9 @@ export default function DatabasePage() {
   function clearFilters() {
     setFilters({ ...EMPTY_FILTERS });
     setSort("followers");
+    setNear("");
+    setDebouncedNear("");
+    setRadius(25);
   }
 
   function isNewAccount(account: Account): boolean {
@@ -223,6 +273,32 @@ export default function DatabasePage() {
             value={filters.q}
             onChange={(e) => updateFilter("q", e.target.value)}
           />
+          <input
+            className="search-input"
+            list="geo-places"
+            placeholder="📍 Near (city)…"
+            value={near}
+            onChange={(e) => setNear(e.target.value)}
+            aria-label="Find creators near a location"
+          />
+          <datalist id="geo-places">
+            {geoPlaces.map((p) => (
+              <option key={p} value={p} />
+            ))}
+          </datalist>
+          {near && (
+            <select
+              value={radius}
+              onChange={(e) => setRadius(Number(e.target.value))}
+              aria-label="Search radius in miles"
+            >
+              {RADIUS_OPTIONS.map((r) => (
+                <option key={r} value={r}>
+                  Within {r} mi
+                </option>
+              ))}
+            </select>
+          )}
           <MultiSelect
             label="Platforms"
             options={(facets?.platforms ?? ["Instagram", "TikTok", "X", "YouTube", "Twitch"]).map(
@@ -266,6 +342,7 @@ export default function DatabasePage() {
             onChange={(e) => setSort(e.target.value as SortKey)}
             aria-label="Sort accounts"
           >
+            {(near || sort === "distance") && <option value="distance">Sort: Nearest</option>}
             <option value="followers">Sort: Followers (high → low)</option>
             <option value="new">Sort: Newest added</option>
             <option value="handle">Sort: Handle (A → Z)</option>
@@ -298,13 +375,24 @@ export default function DatabasePage() {
               : `Showing ${pageStart + 1}–${pageStart + pageAccounts.length} of ${totalFiltered}${
                   hasActiveFilters ? ` (filtered from ${totalInDatabase})` : ""
                 }`}
+        {debouncedNear && !loadingList && !error && (
+          <span className="snapshot-note" style={{ marginLeft: 8 }}>
+            📍 within {radius} mi
+            {approximateNearby > 0 &&
+              ` · ${approximateNearby} more have only approximate (state-level) locations`}
+          </span>
+        )}
       </div>
 
       {!loadingList && !error && totalFiltered === 0 && (
         <p style={{ color: "var(--text-muted)", marginBottom: "1.5rem" }}>
-          {hasActiveFilters
-            ? "No accounts match these filters. Try clearing filters or broadening your search."
-            : "No accounts yet. Use the Search page to find and classify creators."}
+          {debouncedNear && nearResolved === null
+            ? `We couldn't find a location matching “${debouncedNear}”. Try a nearby city (e.g. “Los Angeles, CA”).`
+            : debouncedNear
+              ? `No creators found within ${radius} mi of ${nearResolved}. Try a larger radius or a bigger metro — coverage is densest in major cities.`
+              : hasActiveFilters
+                ? "No accounts match these filters. Try clearing filters or broadening your search."
+                : "No accounts yet. Use the Search page to find and classify creators."}
         </p>
       )}
 

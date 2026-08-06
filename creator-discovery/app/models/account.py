@@ -25,6 +25,12 @@ class Account(SQLModel, table=True):
     secondary_niches: Optional[str] = Field(default=None)
     hobbies: Optional[str] = Field(default=None)
     location_text: Optional[str] = Field(default=None, index=True)
+    # Geocoded from location_text (city-centroid precision). geo_precision:
+    # "city" (usable for radius search) | "region" | "country" (too coarse).
+    latitude: Optional[float] = Field(default=None)
+    longitude: Optional[float] = Field(default=None)
+    geo_precision: Optional[str] = Field(default=None)
+    geocoded_at: Optional[datetime] = Field(default=None)
     contact_email: Optional[str] = Field(default=None, index=True)
     language: Optional[str] = Field(default=None)
     external_links: Optional[str] = Field(default=None)

@@ -6,6 +6,8 @@ from sqlmodel import Session, select
 
 from app.core.auth import require_admin
 from app.core.deps import get_db
+from app.data.place_coords import geocode_place, searchable_places
+from app.utils.geo_search import count_approximate_nearby, geo_search_accounts
 from app.models.account import Account
 from app.models.creator import Creator
 from app.models.enums import Platform
@@ -133,7 +135,11 @@ def _apply_account_filters(
     return stmt
 
 
-def _to_account_reads(session: Session, accounts: List[Account]) -> List[AccountRead]:
+def _to_account_reads(
+    session: Session,
+    accounts: List[Account],
+    distances: Optional[dict] = None,
+) -> List[AccountRead]:
     creator_ids = {a.creator_id for a in accounts if a.creator_id}
     creators_by_id = {}
     if creator_ids:
@@ -146,8 +152,36 @@ def _to_account_reads(session: Session, accounts: List[Account]) -> List[Account
         creator = creators_by_id.get(account.creator_id) if account.creator_id else None
         if creator:
             data.creator_name = creator.canonical_name
+        if distances is not None:
+            miles = distances.get(account.account_id)
+            data.distance_miles = round(miles, 1) if miles is not None else None
         results.append(data)
     return results
+
+
+def _resolve_center(near: str):
+    """Resolve a 'near' value to (lat, lng, label). Accepts 'lat,lng' or a place name."""
+    near = near.strip()
+    if "," in near:
+        parts = [p.strip() for p in near.split(",")]
+        # Treat as coordinates only if both parts are numeric (else it's "City, ST").
+        if len(parts) == 2:
+            try:
+                lat, lng = float(parts[0]), float(parts[1])
+                if -90 <= lat <= 90 and -180 <= lng <= 180:
+                    return lat, lng, near
+            except ValueError:
+                pass
+    hit = geocode_place(near)
+    if hit and hit.precision in ("city", "metro"):
+        return hit.lat, hit.lng, near
+    return None
+
+
+@router.get("/geo/places")
+def geo_places():
+    """Place names usable as a radius-search center (for the frontend picker)."""
+    return {"places": searchable_places()}
 
 
 @router.post("/ingest", response_model=AccountIngestResponse)
@@ -258,7 +292,9 @@ def list_accounts(
     min_followers: Optional[int] = Query(default=None, ge=0),
     max_followers: Optional[int] = Query(default=None, ge=0),
     tiers: Optional[List[int]] = Query(default=None),
-    sort: str = Query(default="followers", pattern="^(followers|new|recent|handle)$"),
+    near: Optional[str] = Query(default=None, description="Radius-search center: a place name or 'lat,lng'"),
+    radius_miles: float = Query(default=25, ge=1, le=500),
+    sort: str = Query(default="followers", pattern="^(followers|new|recent|handle|distance)$"),
     limit: int = Query(default=200, le=500),
     offset: int = Query(default=0, ge=0),
 ):
@@ -275,15 +311,61 @@ def list_accounts(
         tiers=tiers,
     )
 
-    count_stmt = select(func.count()).select_from(Account)
-    count_stmt = _apply_account_filters(count_stmt, **base_filters)
-    total = session.exec(count_stmt).one()
-
     total_in_database = session.exec(
         select(func.count())
         .select_from(Account)
         .where(Account.is_active == True)  # noqa: E712
     ).one()
+
+    # Radius ("near") search: resolve a center, find creators within radius (ranked
+    # by distance), then apply the normal filters to that bounded set. The geo
+    # result is small (<= a few hundred) so we page it in Python.
+    if near:
+        center = _resolve_center(near)
+        if center is None:
+            # Unknown/partial place (free-text input) is not an error — return an
+            # empty result with near_resolved=None so the UI can say "not found"
+            # instead of showing an "API is down" banner.
+            return AccountListResponse(
+                items=[], total=0, total_in_database=total_in_database, near_resolved=None
+            )
+        lat, lng, near_resolved = center
+        geo_hits = geo_search_accounts(session, lat, lng, radius_miles, limit=500)
+        distances = {aid: miles for aid, miles in geo_hits}
+        approx = count_approximate_nearby(session, lat, lng, radius_miles)
+        if not distances:
+            return AccountListResponse(
+                items=[], total=0, total_in_database=total_in_database,
+                approximate_nearby=approx, near_resolved=near_resolved,
+            )
+        stmt = _apply_account_filters(select(Account), **base_filters)
+        stmt = stmt.where(Account.account_id.in_(list(distances)))
+        matched = session.exec(stmt).all()
+        # Every sort ends on account_id so the paginated (offset/limit) result is
+        # stable — critical here because all creators in one city share the same
+        # centroid (distance ties are the norm, not the exception). Descending
+        # sorts use a two-pass stable sort (account_id asc, then the key desc).
+        matched.sort(key=lambda a: a.account_id)
+        if sort == "handle":
+            matched.sort(key=lambda a: a.handle.lower())
+        elif sort == "followers":
+            matched.sort(key=lambda a: a.follower_count or 0, reverse=True)
+        elif sort in ("new", "recent"):
+            matched.sort(key=lambda a: a.created_at, reverse=True)
+        else:  # distance (default in near mode)
+            matched.sort(key=lambda a: distances.get(a.account_id, 1e9))
+        page = matched[offset : offset + limit]
+        return AccountListResponse(
+            items=_to_account_reads(session, page, distances=distances),
+            total=len(matched),
+            total_in_database=total_in_database,
+            approximate_nearby=approx,
+            near_resolved=near_resolved,
+        )
+
+    count_stmt = select(func.count()).select_from(Account)
+    count_stmt = _apply_account_filters(count_stmt, **base_filters)
+    total = session.exec(count_stmt).one()
 
     stmt = select(Account)
     stmt = _apply_account_filters(stmt, **base_filters)

@@ -48,6 +48,7 @@ export interface Account {
   classification_confidence: number | null;
   follower_count: number | null;
   tier?: number | null;
+  distance_miles?: number | null;
   is_active: boolean;
   created_at?: string;
   creator_name?: string | null;
@@ -86,6 +87,8 @@ export interface AccountListResponse {
   items: Account[];
   total: number;
   total_in_database: number;
+  approximate_nearby?: number;
+  near_resolved?: string | null;
 }
 
 export interface AccountFacets {
@@ -105,6 +108,8 @@ export interface AccountFilters {
   q?: string;
   min_followers?: number;
   max_followers?: number;
+  near?: string;
+  radius_miles?: number;
 }
 
 export interface SearchResult {
@@ -200,7 +205,7 @@ export function parseFollowerInput(value: string): number | undefined {
   return Math.round(n);
 }
 
-export type AccountSort = "followers" | "new" | "recent" | "handle";
+export type AccountSort = "followers" | "new" | "recent" | "handle" | "distance";
 
 export async function listAccounts(
   filters: AccountFilters = {},
@@ -217,9 +222,18 @@ export async function listAccounts(
   if (filters.q) params.set("q", filters.q);
   if (filters.min_followers != null) params.set("min_followers", String(filters.min_followers));
   if (filters.max_followers != null) params.set("max_followers", String(filters.max_followers));
+  if (filters.near) params.set("near", filters.near);
+  if (filters.radius_miles != null) params.set("radius_miles", String(filters.radius_miles));
   const res = await fetch(`${API_BASE}/accounts?${params}`);
   if (!res.ok) throw new Error("Failed to load accounts");
   return res.json();
+}
+
+/** Place names usable as a radius-search center (for the "Near" picker). */
+export async function fetchGeoPlaces(): Promise<string[]> {
+  const res = await fetch(`${API_BASE}/accounts/geo/places`);
+  if (!res.ok) return [];
+  return (await res.json()).places ?? [];
 }
 
 export async function getAccountFacets(): Promise<AccountFacets> {
